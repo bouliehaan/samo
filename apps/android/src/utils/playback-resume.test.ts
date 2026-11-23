@@ -217,26 +217,65 @@ describe('refreshPlayableResumeFromServer', () => {
         expect(result.initialPositionSeconds).toBe(2526);
     });
 
-    it('prefers the server position over the cache when the server answers', async () => {
+    const book = () =>
+        baseItem({
+            contentSourceId: 'samo:https://samo',
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            source: 'audiobook',
+        });
+
+    it('prefers the server position when the cache has no stamp to beat it with', async () => {
         loadCurrentPlaybackProgressMock.mockResolvedValue({
             currentTimeSeconds: 1234,
             isFinished: false,
+            updatedAtMs: Date.parse('2026-10-31T03:26:00Z'),
         });
         getNativeResumeProgressMock.mockResolvedValue({
             completed: false,
             progressSeconds: 9999,
         });
 
-        const item = baseItem({
-            contentSourceId: 'samo:https://samo',
-            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
-            source: 'audiobook',
-        });
-
-        const result = await refreshPlayableResumeFromServer(item, null);
+        const result = await refreshPlayableResumeFromServer(book(), null);
 
         expect(result.initialPositionSeconds).toBe(1234);
-        expect(getNativeResumeProgressMock).not.toHaveBeenCalled();
+    });
+
+    it('prefers the server position when another device wrote it after the phone', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 5000,
+            isFinished: false,
+            updatedAtMs: Date.parse('2026-10-31T18:00:00Z'),
+        });
+        getNativeResumeProgressMock.mockResolvedValue({
+            completed: false,
+            progressSeconds: 1700,
+            updatedAtMs: Date.parse('2026-10-31T04:10:00Z'),
+        });
+
+        const result = await refreshPlayableResumeFromServer(book(), null);
+
+        expect(result.initialPositionSeconds).toBe(5000);
+    });
+
+    // A server row left behind in the prologue while the phone's journal holds
+    // a later spot. Starting from the server's played the prologue again, and
+    // the next write saved it over the phone's.
+    it('prefers the phone position when the phone saved it after the server', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 632,
+            isFinished: false,
+            updatedAtMs: Date.parse('2026-10-31T03:26:00Z'),
+        });
+        getNativeResumeProgressMock.mockResolvedValue({
+            completed: false,
+            progressSeconds: 1724,
+            updatedAtMs: Date.parse('2026-10-31T04:10:00Z'),
+        });
+
+        const result = await refreshPlayableResumeFromServer(book(), null);
+
+        expect(getNativeResumeProgressMock).toHaveBeenCalledWith('audiobook', 'book-7');
+        expect(result.initialPositionSeconds).toBe(1724);
     });
 });
 

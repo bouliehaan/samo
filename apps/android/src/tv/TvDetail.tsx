@@ -6,9 +6,8 @@ import {
     MobileMediaDetailType,
     type MobileMediaTrack,
 } from '@samo/core/mobile';
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { FlatList, Text, View } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import { ArtworkImage } from '../components/ArtworkImage';
 import { MoreGlyph, PlayPauseGlyph, ShuffleGlyph } from '../components/Glyphs';
 import { handlePlayMediaTrack, handleShuffleDetailTracks } from '../handlers/playback-handlers';
@@ -21,11 +20,14 @@ import { useMiniPlayerPlaybackState } from '../state/playback-store';
 import { colors } from '../theme/tokens';
 import { getDefaultDetailTrackOrder, getDetailTypeLabel } from '../utils/media-detail';
 import { playOnTv } from './tv-actions';
-import { TvShelf } from './TvCollections';
+import { TvShelf, TvTopFade } from './TvCollections';
 import { TvButton, TvFocusScope, TvPressable, type TvFocusMemory } from './TvControls';
 import { TvFocusGroup } from './TvFocusGroup';
-import { didTvFocusArriveUp } from './tv-focus';
-import { TV_SCROLL_EDGE, tvStyles as s } from './tv-styles';
+import { TV_ANCHOR_TOP, TV_LIST_PROPS, tvFocus, tvStyles as s } from './tv-styles';
+
+/** A row of a long list rides this far from the screen's edges, so the rows
+ *  either side of the one focus is on are always in sight. */
+const TRACK_SCROLL_MARGIN = 96;
 
 /** What a detail's list holds, by the name the list's own kind gives it. */
 const getTrackNoun = (type: MobileMediaDetailType, count: number): string =>
@@ -49,19 +51,23 @@ const getDetailFacts = (detail: MobileMediaDetail, trackCount: number): string =
         detail.type === MobileMediaDetailType.ALBUM
             ? formatQualityProfile(getDetailQualityProfile(detail))
             : null;
-    return [
-        year,
-        // A book's lines lead with its author, already the subtitle above.
-        ...(detail.metadataLines ?? []).filter(
-            (line) => line !== year && line !== detail.subtitle,
-        ),
-        detail.type !== MobileMediaDetailType.ARTIST && trackCount
-            ? getTrackNoun(detail.type, trackCount)
-            : undefined,
-        format,
-    ]
-        .filter((fact): fact is string => Boolean(fact))
-        .join(' · ');
+    return (
+        [
+            year,
+            // A book's lines lead with its author, already the subtitle above.
+            ...(detail.metadataLines ?? []).filter(
+                (line) => line !== year && line !== detail.subtitle,
+            ),
+            detail.type !== MobileMediaDetailType.ARTIST && trackCount
+                ? getTrackNoun(detail.type, trackCount)
+                : undefined,
+            format,
+        ]
+            // Whatever the subtitle already says (a playlist's is its track
+            // count) is not said again a line below it.
+            .filter((fact): fact is string => Boolean(fact) && fact !== detail.subtitle)
+            .join(' · ')
+    );
 };
 
 /**
@@ -104,58 +110,44 @@ const TvTrackRow = memo(function TvTrackRow({
         <TvPressable
             id={`track:${index}`}
             label={`${track.title}${meta ? `, ${meta}` : ''}`}
-            onPress={() => onPress(track, index)}
+            look={tvFocus.row}
             onLongPress={() => mediaContextMenuApi.openForTrack(track, detail)}
+            onPress={() => onPress(track, index)}
+            scrollMargin={TRACK_SCROLL_MARGIN}
             style={s.track}
-            focusedStyle={s.trackFocused}
         >
-            {(focused) => (
-                <>
-                    {isAlbum || isBook ? (
-                        <Text style={[s.trackIndex, focused && s.trackInkFocused]}>
-                            {(isAlbum && track.trackNumber) || index + 1}
-                        </Text>
-                    ) : (
-                        <ArtworkImage
-                            // The detail's art stands in only for a track
-                            // without any of its own (see MediaDetailTrackRow).
-                            artworkImageId={
-                                track.artworkImageId ??
-                                (track.artworkUrl ? undefined : detail.artworkImageId)
-                            }
-                            contentSource={detail.source}
-                            letter={track.title.slice(0, 1)}
-                            style={s.trackArt}
-                            uri={track.artworkUrl ?? detail.artworkUrl}
-                        />
-                    )}
-                    <View style={s.trackCopy}>
-                        <Text
-                            numberOfLines={1}
-                            style={[
-                                s.trackTitle,
-                                playing && s.trackPlaying,
-                                focused && s.trackInkFocused,
-                            ]}
-                        >
-                            {track.title}
-                        </Text>
-                        {meta ? (
-                            <Text
-                                numberOfLines={1}
-                                style={[s.trackSubtitle, focused && s.trackInkFocused]}
-                            >
-                                {meta}
-                            </Text>
-                        ) : null}
-                    </View>
-                    {!isEpisode ? (
-                        <Text style={[s.trackMeta, focused && s.trackInkFocused]}>
-                            {formatTrackDuration(track.durationSeconds) ?? ''}
-                        </Text>
-                    ) : null}
-                </>
+            {isAlbum || isBook ? (
+                <Text style={[s.trackIndex, playing && s.trackPlaying]}>
+                    {(isAlbum && track.trackNumber) || index + 1}
+                </Text>
+            ) : (
+                <ArtworkImage
+                    // The detail's art stands in only for a track
+                    // without any of its own (see MediaDetailTrackRow).
+                    artworkImageId={
+                        track.artworkImageId ??
+                        (track.artworkUrl ? undefined : detail.artworkImageId)
+                    }
+                    contentSource={detail.source}
+                    letter={track.title.slice(0, 1)}
+                    style={s.trackArt}
+                    uri={track.artworkUrl ?? detail.artworkUrl}
+                    width={s.trackArt.width}
+                />
             )}
+            <View style={s.trackCopy}>
+                <Text numberOfLines={1} style={[s.trackTitle, playing && s.trackPlaying]}>
+                    {track.title}
+                </Text>
+                {meta ? (
+                    <Text numberOfLines={1} style={s.trackSubtitle}>
+                        {meta}
+                    </Text>
+                ) : null}
+            </View>
+            {!isEpisode ? (
+                <Text style={s.trackMeta}>{formatTrackDuration(track.durationSeconds) ?? ''}</Text>
+            ) : null}
         </TvPressable>
     );
 });
@@ -170,12 +162,6 @@ function DetailContent({ detail }: { detail: MobileMediaDetail }) {
     const facts = getDetailFacts(detail, tracks.length);
     const playback = useMiniPlayerPlaybackState();
     const playingId = playback.status === 'idle' ? null : playback.item.id;
-    const list = useRef<FlatList<MobileMediaTrack>>(null);
-    // The actions sit at the foot of the header: a plain scroll back up would
-    // stop with them at the edge margin, and the cover and title cut off.
-    const revealTop = useCallback(() => {
-        if (didTvFocusArriveUp()) list.current?.scrollToOffset({ animated: true, offset: 0 });
-    }, []);
     const playTrack = useCallback(
         (track: MobileMediaTrack, index: number) =>
             playOnTv(() => handlePlayMediaTrack(detail, track, index, tracks)),
@@ -196,89 +182,72 @@ function DetailContent({ detail }: { detail: MobileMediaDetail }) {
                         s.detailArt,
                         detail.type === MobileMediaDetailType.ARTIST && s.detailArtRound,
                     ]}
+                    width={s.detailArt.width}
                 />
                 <View style={s.detailCopy}>
-                    <Text style={s.detailType}>{getDetailTypeLabel(detail.type)}</Text>
-                    <Text numberOfLines={3} style={s.detailTitle}>
+                    <Text style={s.label}>{getDetailTypeLabel(detail.type)}</Text>
+                    <Text numberOfLines={2} style={s.detailTitle}>
                         {detail.title}
                     </Text>
                     {detail.subtitle ? (
-                        <Text numberOfLines={2} style={s.detailSubtitle}>
+                        <Text numberOfLines={1} style={s.detailSubtitle}>
                             {detail.subtitle}
                         </Text>
                     ) : null}
                     {facts ? (
-                        <Text numberOfLines={2} style={s.muted}>
+                        <Text numberOfLines={2} style={[s.meta, s.detailFacts]}>
                             {facts}
                         </Text>
                     ) : null}
+                    {/* The actions sit at the foot of the header: they bring
+                        all of it back, the cover and title above them too. */}
                     <TvFocusGroup style={s.detailActions}>
                         {tracks[0] ? (
                             <TvButton
+                                anchorY={TV_ANCHOR_TOP}
                                 id="detail:play"
                                 label="Play"
-                                onFocus={revealTop}
                                 onPress={() => playTrack(tracks[0], 0)}
                                 primary
                             >
-                                {(focused) => (
-                                    <>
-                                        <PlayPauseGlyph
-                                            color={focused ? colors.background : colors.text}
-                                            isPlaying={false}
-                                            size={18}
-                                        />
-                                        <Text
-                                            style={[s.buttonText, focused && s.buttonTextFocused]}
-                                        >
-                                            Play
-                                        </Text>
-                                    </>
-                                )}
+                                <PlayPauseGlyph
+                                    color={colors.background}
+                                    isPlaying={false}
+                                    size={16}
+                                />
+                                <Text style={[s.buttonText, s.buttonTextPrimary]}>Play</Text>
                             </TvButton>
                         ) : null}
                         {collection && tracks.length > 1 ? (
                             <TvButton
+                                anchorY={TV_ANCHOR_TOP}
                                 id="detail:shuffle"
                                 label="Shuffle"
-                                onFocus={revealTop}
                                 onPress={() =>
                                     playOnTv(() => handleShuffleDetailTracks(detail, tracks))
                                 }
                             >
-                                {(focused) => (
-                                    <>
-                                        <ShuffleGlyph
-                                            color={focused ? colors.background : colors.text}
-                                            size={20}
-                                        />
-                                        <Text
-                                            style={[s.buttonText, focused && s.buttonTextFocused]}
-                                        >
-                                            Shuffle
-                                        </Text>
-                                    </>
-                                )}
+                                <ShuffleGlyph color={colors.text} size={18} />
+                                <Text style={s.buttonText}>Shuffle</Text>
                             </TvButton>
                         ) : null}
                         {item ? (
                             <TvButton
+                                anchorY={TV_ANCHOR_TOP}
                                 id="detail:more"
                                 label="More options"
-                                onFocus={revealTop}
-                                style={s.iconButton}
+                                look={tvFocus.icon}
                                 onPress={openMenu}
+                                style={s.iconButton}
                             >
-                                {(focused) => (
-                                    <MoreGlyph color={focused ? colors.background : colors.text} />
-                                )}
+                                <MoreGlyph color={colors.text} />
                             </TvButton>
                         ) : null}
                     </TvFocusGroup>
                 </View>
             </View>
             {tracks.length && !showDiscs ? (
-                <Text style={[s.eyebrow, s.trackListHeading]}>
+                <Text style={[s.sectionTitle, s.trackHeading]}>
                     {detail.type === MobileMediaDetailType.PODCAST
                         ? 'Episodes'
                         : detail.type === MobileMediaDetailType.AUDIOBOOK
@@ -324,27 +293,17 @@ function DetailContent({ detail }: { detail: MobileMediaDetail }) {
     );
     return (
         <>
-            <LinearGradient
-                colors={['#1b2028', colors.background]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0.6, y: 1 }}
-                style={s.detailBackdrop}
-                pointerEvents="none"
-            />
             <FlatList
                 data={tracks}
                 extraData={playingId}
                 keyExtractor={(track, index) => `${track.id}:${index}`}
                 contentContainerStyle={s.pageScroll}
-                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
                 ListHeaderComponent={header}
                 ListFooterComponent={footer}
                 initialNumToRender={8}
                 maxToRenderPerBatch={5}
-                ref={list}
                 windowSize={5}
-                removeClippedSubviews={false}
-                showsVerticalScrollIndicator={false}
+                {...TV_LIST_PROPS}
                 renderItem={({ item: track, index }) => {
                     const disc = track.discNumber ?? 1;
                     const discStarts =
@@ -355,15 +314,14 @@ function DetailContent({ detail }: { detail: MobileMediaDetail }) {
                             index={index}
                             onPress={playTrack}
                             playing={
-                                playingId !== null &&
-                                (track.playback?.id ?? track.id) === playingId
+                                playingId !== null && (track.playback?.id ?? track.id) === playingId
                             }
                             track={track}
                         />
                     );
                     return discStarts ? (
                         <>
-                            <Text style={[s.eyebrow, s.trackListHeading]}>Disc {disc}</Text>
+                            <Text style={[s.sectionTitle, s.trackHeading]}>Disc {disc}</Text>
                             {row}
                         </>
                     ) : (
@@ -371,6 +329,7 @@ function DetailContent({ detail }: { detail: MobileMediaDetail }) {
                     );
                 }}
             />
+            <TvTopFade />
         </>
     );
 }
@@ -417,7 +376,7 @@ export function TvDetail({ active }: { active: boolean }) {
             {state.status === 'loaded' ? (
                 <DetailContent detail={state.detail} />
             ) : (
-                <View style={s.pageScroll}>
+                <View style={[s.pageScroll, s.empty]}>
                     <Text style={s.pageTitle}>
                         {state.status === 'loading' ? state.itemTitle : 'Unable to open item'}
                     </Text>

@@ -12,8 +12,13 @@ import { type MobileContentSource } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { useServerConnections } from '../contexts/server-connections';
-import { peekArtworkLocalUri, subscribeArtworkIndex } from '../services/artwork-cache';
+import {
+    type ArtworkCopy,
+    peekArtworkCopy,
+    subscribeArtworkIndex,
+} from '../services/artwork-cache';
 import { canonicalArtworkKey } from '../utils/artwork-canonical';
+import { getArtworkWidth, sizeArtworkSource } from '../utils/artwork-size';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import {
@@ -40,6 +45,7 @@ export const ArtworkImage = ({
     style,
     transition = 0,
     uri,
+    width,
 }: {
     artworkImageId?: string;
     /**
@@ -79,6 +85,9 @@ export const ArtworkImage = ({
      * Before adding it anywhere: is the image large, freshly mounted, short-lived
      * on screen in placeholder form, and does a blank first frame actually read
      * as a bug? If any answer is no, leave it off.
+     *
+     * A slot wider than the cache keeps covers at needs no opt-in: it shows the
+     * smaller cached cover while its own size loads (see `placeholder` below).
      */
     instantPlaceholder?: boolean;
     letter: string;
@@ -93,13 +102,28 @@ export const ArtworkImage = ({
      */
     transition?: number;
     uri?: string;
+    /**
+     * How wide the slot is, in dp. A samo cover is sent at about the size it
+     * is drawn (`sizeArtworkSource`) rather than as stored, which for a TV
+     * tile meant decoding a 1400-3000px original to show under 300px, and for
+     * a phone row a 3000px one to show 150px.
+     *
+     * Required, so no slot can forget it. A slot wider than the server's
+     * largest size (the zoom) gets the cover as stored.
+     */
+    width: number;
 }) => {
     const [errored, setErrored] = useState(false);
     const contextConnections = useServerConnections();
     const resolvedConnections = serverConnection ?? contextConnections;
+    const slotWidth = getArtworkWidth(width);
     const resolvedSource = useMemo((): ImageSource | string | undefined => {
+        if (typeof source === 'string') {
+            return sizeArtworkSource(source, width);
+        }
         if (source) {
-            return source;
+            const { uri: sourceUri } = source;
+            return sourceUri ? sizeArtworkSource({ ...source, uri: sourceUri }, width) : source;
         }
 
         if (contentSource && resolvedConnections) {
@@ -108,7 +132,7 @@ export const ArtworkImage = ({
                 resolvedConnections,
             );
             if (fromItem) {
-                return fromItem;
+                return sizeArtworkSource(fromItem, width);
             }
         }
 
@@ -120,8 +144,8 @@ export const ArtworkImage = ({
         if (isSamoMediaUrlMissingStreamToken(uri)) {
             return undefined;
         }
-        return uri;
-    }, [artworkImageId, contentSource, resolvedConnections, source, uri]);
+        return sizeArtworkSource(uri, width);
+    }, [artworkImageId, contentSource, resolvedConnections, source, uri, width]);
     const remoteUri =
         typeof resolvedSource === 'string' ? resolvedSource : resolvedSource?.uri;
 
@@ -150,34 +174,43 @@ export const ArtworkImage = ({
     // views. Re-peeking a miss costs a Map lookup and can only ever improve the
     // answer; a HIT is never re-peeked, so the pin still does its real job of
     // never swapping a visible image out from under the viewer.
+    //
+    // The cache keeps each cover at one width (COVER_CACHE_WIDTH), so a hit
+    // can be a copy smaller than this slot draws. That copy is not drawn as
+    // the slot's picture: the slot loads its own size and shows the copy
+    // while it does, and draws the copy only if its own size cannot be had.
     const [indexEpoch, setIndexEpoch] = useState(0);
-    const pinnedRef = useRef<{ epoch: number; key: string | undefined; uri: string | null }>({
+    const pinnedRef = useRef<{
+        copy: ArtworkCopy | null;
+        epoch: number;
+        key: string | undefined;
+    }>({
+        copy: null,
         epoch: -1,
         key: undefined,
-        uri: null,
     });
     if (
         pinnedRef.current.key !== canonicalKey ||
-        (pinnedRef.current.uri === null && pinnedRef.current.epoch !== indexEpoch)
+        (pinnedRef.current.copy === null && pinnedRef.current.epoch !== indexEpoch)
     ) {
         pinnedRef.current = {
+            copy: remoteUri ? peekArtworkCopy(remoteUri, slotWidth) : null,
             epoch: indexEpoch,
             key: canonicalKey,
-            uri: remoteUri ? peekArtworkLocalUri(remoteUri) : null,
         };
     }
-    const pinnedLocalUri = pinnedRef.current.uri;
+    const pinnedCopy = pinnedRef.current.copy;
     const [localFailed, setLocalFailed] = useState(false);
 
     // Only subscribe while this tile is actually waiting on the cache. A hit has
     // nothing left to learn, so a warm-cache screen registers no listeners at
     // all and the notification costs nothing.
     useEffect(() => {
-        if (pinnedLocalUri !== null || !remoteUri) {
+        if (pinnedCopy !== null || !remoteUri) {
             return;
         }
         return subscribeArtworkIndex(() => setIndexEpoch((current) => current + 1));
-    }, [pinnedLocalUri, remoteUri]);
+    }, [pinnedCopy, remoteUri]);
 
     // A genuinely new cover (canonical identity changed) clears BOTH latches so
     // the fresh image gets a clean attempt.
@@ -194,16 +227,21 @@ export const ArtworkImage = ({
         setErrored(false);
     }, [remoteUri]);
 
-    const useLocal = Boolean(pinnedLocalUri) && !localFailed;
+    const copy = localFailed ? null : pinnedCopy;
+    // A copy too small for the slot is still drawn once the slot's own size
+    // has failed (offline, say): a softer cover beats a letter.
+    const useLocal = copy !== null && (copy.wideEnough || errored);
 
     // Hand expo-image a source carrying the canonical cacheKey so the local
     // file:// and the remote URL resolve to ONE cache entry — swapping between
     // them (or rotating the token) is seamless instead of a fresh decode.
+    // Except for a copy standing in for a larger cover: remembered under the
+    // larger one's key, it would be what that slot drew from memory from then on.
     const displaySource = useMemo((): ImageSource | undefined => {
-        if (useLocal && pinnedLocalUri) {
-            return canonicalKey
-                ? { cacheKey: canonicalKey, uri: pinnedLocalUri }
-                : { uri: pinnedLocalUri };
+        if (useLocal && copy) {
+            return canonicalKey && copy.wideEnough
+                ? { cacheKey: canonicalKey, uri: copy.uri }
+                : { uri: copy.uri };
         }
         if (!resolvedSource) {
             return undefined;
@@ -211,14 +249,14 @@ export const ArtworkImage = ({
         const base: ImageSource =
             typeof resolvedSource === 'string' ? { uri: resolvedSource } : resolvedSource;
         return canonicalKey ? { ...base, cacheKey: canonicalKey } : base;
-    }, [canonicalKey, pinnedLocalUri, resolvedSource, useLocal]);
+    }, [canonicalKey, copy, resolvedSource, useLocal]);
 
     // The letter fallback is reserved for art that has genuinely FAILED or that
     // does not exist. While a cover that DOES exist is still resolving (the
     // server connection / stream token is mid-flight), show a neutral tile so we
     // never flash a letter and then swap in the cover a frame later.
     const hasArtworkIdentity = Boolean(source || artworkImageId || uri);
-    if (errored || (!displaySource && !hasArtworkIdentity)) {
+    if ((errored && !useLocal) || (!displaySource && !hasArtworkIdentity)) {
         return (
             <View
                 style={[
@@ -287,8 +325,8 @@ export const ArtworkImage = ({
             // the cover immediately instead of blank, then resolves the identical
             // source underneath (no visible change).
             //
-            // OPT-IN, AND IT MUST STAY OPT-IN. THIS IS THE MOST EXPENSIVE PROP ON
-            // THE COMPONENT.
+            // OPT-IN FOR A COPY THAT IS THE SLOT'S PICTURE, AND IT MUST STAY
+            // OPT-IN. THIS IS THE MOST EXPENSIVE PROP ON THE COMPONENT.
             //
             // `placeholder` is not a cheap poster frame. expo-image compiles it
             // into a Glide `thumbnail()` request — a SECOND, parallel load of the
@@ -300,19 +338,31 @@ export const ArtworkImage = ({
             // placeholder decodes as 32-bit ARGB_8888.
             //
             // So the tile that asks for a tidy 500x500 RGB_565 cover (0.5MB) also
-            // decodes the SAME file at whatever the server stored — 1200px, 3000px
-            // — in 32-bit. A 1500px cover is 9MB, per tile, in parallel with the
-            // real one. It was set unconditionally here, so every tile on every
-            // grid, shelf, browse page and track list in the app paid it: decode
-            // threads saturated, the bitmap pool thrashed, and dense pages scrolled
-            // at ~15fps. The blank frame it fixes is a MOUNT artifact, and only a
+            // decodes the SAME file at whatever size it is kept at — a 1500px
+            // original is 9MB, per tile, in parallel with the real one. It was set
+            // unconditionally here once, so every tile on every grid, shelf,
+            // browse page and track list in the app paid it: decode threads
+            // saturated, the bitmap pool thrashed, and dense pages scrolled at
+            // ~15fps. The blank frame it fixes is a MOUNT artifact, and only a
             // single large image that mounts on its own is ever big enough or
             // still enough for anyone to see it.
+            //
+            // A copy SMALLER than the slot is the one case it is always on. Only
+            // slots wider than the cache's covers have one — a hero, the player,
+            // the zoom: single large images, where it decodes fewer pixels than
+            // the picture it stands in for, and where without it they would sit
+            // blank while their own size loads. expo-image never puts it over a
+            // cover already showing, so a cover changing in place is unaffected.
+            //
+            // Never with a blur: the placeholder request is not blurred, so a
+            // blurred backdrop would flash sharp.
             //
             // Also gated on having a local file, so an uncached tile still falls
             // through to its letter.
             placeholder={
-                instantPlaceholder && pinnedLocalUri ? { uri: pinnedLocalUri } : undefined
+                copy && !blurRadius && (instantPlaceholder || !useLocal)
+                    ? { uri: copy.uri }
+                    : undefined
             }
             placeholderContentFit="cover"
             // A crossfade needs the SAME native view to persist across source

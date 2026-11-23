@@ -71,6 +71,7 @@ const HomeFilterGridTile = memo(
                         isPodcast && styles.homeFilterGridArtworkPodcast,
                     ]}
                     uri={item.artworkUrl}
+                    width={styles.homeFilterGridArtwork.width}
                 />
                 <Text numberOfLines={2} style={styles.mediaTitle} {...androidTrimCaptionFont}>
                     {item.title}

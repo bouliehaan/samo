@@ -12,7 +12,10 @@ import {
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
-import { loadCurrentPlaybackProgress } from '../services/playback-progress';
+import {
+    type LoadedPlaybackProgress,
+    loadCurrentPlaybackProgress,
+} from '../services/playback-progress';
 import { type AndroidPlaybackState } from '../types/playback';
 
 import { getNativeResumeProgress } from './native-resume';
@@ -154,6 +157,41 @@ export const mergePreparedQueueItem = (
         : rest;
 };
 
+export interface ResumeProgress {
+    completed: boolean;
+    progressSeconds: number;
+    updatedAtMs?: number;
+}
+
+/**
+ * The phone's own journal against the server's row: the one written later
+ * wins. The server used to win whenever it answered at all, so a server row
+ * that missed the end of last night's listening sent the book back to it, and
+ * the next write saved that old spot over the one the phone still had. It
+ * takes a stamp on both sides to overturn the server; a journal entry from an
+ * older build has none.
+ */
+export const fresherResumeProgress = (
+    server: LoadedPlaybackProgress | null,
+    local: ResumeProgress | null,
+): ResumeProgress | null => {
+    const fromServer = server
+        ? {
+              completed: server.isFinished,
+              progressSeconds: server.currentTimeSeconds,
+              updatedAtMs: server.updatedAtMs,
+          }
+        : null;
+    if (!fromServer || !local) {
+        return fromServer ?? local;
+    }
+    return local.updatedAtMs !== undefined &&
+        fromServer.updatedAtMs !== undefined &&
+        local.updatedAtMs > fromServer.updatedAtMs
+        ? local
+        : fromServer;
+};
+
 /** Reload samo/ABS long-form progress before starting a stream URL (URLs do not carry position). */
 export const refreshPlayableResumeFromServer = async (
     item: MobilePlayableAudio,
@@ -177,57 +215,33 @@ export const refreshPlayableResumeFromServer = async (
             return item;
         }
 
-        const progress = await loadCurrentPlaybackProgress(authentication, showId, episodeId);
-        if (progress) {
-            const resumeSeconds = resolveLongFormResumeSeconds({
-                completed: progress.isFinished,
-                durationSeconds: progress.durationSeconds ?? item.durationSeconds,
-                progressSeconds: progress.currentTimeSeconds,
-            });
-            if (resumeSeconds > 0) {
-                const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
-                    () => undefined,
-                );
-                return applySamoPodcastStreamResume(
-                    item,
-                    resumeSeconds,
-                    authentication,
-                    streamToken,
-                );
-            }
-            // The server says there is nothing to resume to — most often
-            // because the episode is FINISHED. Clearing is the point: this
-            // used to fall through and return the item untouched, which left
-            // whatever build-time resume the episode was constructed with in
-            // place (a mirror row synced before the listen ended still carries
-            // the outro position), so a finished episode replayed at its end.
-            return withoutResumePosition(item);
-        }
-        // Server read failed (null) — fall back to the native local resume cache
-        // so a transient LAN outage can't restart the episode at 0.
-        const cached = await getNativeResumeProgress('podcast-episode', episodeId);
-        const cachedResumeSeconds = cached
+        // A failed server read (null) leaves the native local resume cache, so
+        // a transient LAN outage can't restart the episode at 0.
+        const progress = fresherResumeProgress(
+            await loadCurrentPlaybackProgress(authentication, showId, episodeId),
+            await getNativeResumeProgress('podcast-episode', episodeId),
+        );
+        const resumeSeconds = progress
             ? resolveLongFormResumeSeconds({
-                  completed: cached.completed,
+                  completed: progress.completed,
                   durationSeconds: item.durationSeconds,
-                  progressSeconds: cached.progressSeconds,
+                  progressSeconds: progress.progressSeconds,
               })
             : 0;
-        if (cachedResumeSeconds > 0) {
+        if (resumeSeconds > 0) {
             const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
                 () => undefined,
             );
-            return applySamoPodcastStreamResume(
-                item,
-                cachedResumeSeconds,
-                authentication,
-                streamToken,
-            );
+            return applySamoPodcastStreamResume(item, resumeSeconds, authentication, streamToken);
         }
-        // A cache entry that says "finished" is as authoritative as the server
-        // saying it; no entry at all is silence, and silence must not throw
-        // away a resume the item already carries.
-        return cached ? withoutResumePosition(item) : item;
+        // Nothing to resume to — most often because the episode is FINISHED.
+        // Clearing is the point: returning the item untouched left whatever
+        // build-time resume the episode was constructed with in place (a
+        // mirror row synced before the listen ended still carries the outro
+        // position), so a finished episode replayed at its end. No answer from
+        // either source is silence, and silence must not throw away a resume
+        // the item already carries.
+        return progress ? withoutResumePosition(item) : item;
     }
 
     // Audiobook queue ids are the per-file form `…:audiobook:<bookId>:file:<mediaFileId>`
@@ -247,35 +261,27 @@ export const refreshPlayableResumeFromServer = async (
     // restart the entire book. See MobilePlayableAudio.timelineDurationSeconds.
     const bookDurationSeconds = item.timelineDurationSeconds ?? item.durationSeconds;
 
-    const progress = await loadCurrentPlaybackProgress(authentication, itemId);
-    if (progress) {
-        const resumeSeconds = resolveLongFormResumeSeconds({
-            completed: progress.isFinished,
-            durationSeconds: progress.durationSeconds ?? bookDurationSeconds,
-            progressSeconds: progress.currentTimeSeconds,
-        });
-        return resumeSeconds > 0
-            ? withResumePosition(item, resumeSeconds)
-            : withoutResumePosition(item);
-    }
-    // Server read failed (null) — fall back to the native local resume cache so a
-    // transient LAN outage can't restart the book at 0 (which then overwrote the
-    // good server position).
-    const cached = await getNativeResumeProgress('audiobook', itemId);
-    const cachedResumeSeconds = cached
+    // A failed server read (null) leaves the native local resume cache, so a
+    // transient LAN outage can't restart the book at 0 (which then overwrote
+    // the good server position).
+    const progress = fresherResumeProgress(
+        await loadCurrentPlaybackProgress(authentication, itemId),
+        await getNativeResumeProgress('audiobook', itemId),
+    );
+    const resumeSeconds = progress
         ? resolveLongFormResumeSeconds({
-              completed: cached.completed,
+              completed: progress.completed,
               durationSeconds: bookDurationSeconds,
-              progressSeconds: cached.progressSeconds,
+              progressSeconds: progress.progressSeconds,
           })
         : 0;
-    if (cachedResumeSeconds > 0) {
-        return withResumePosition(item, cachedResumeSeconds);
+    if (resumeSeconds > 0) {
+        return withResumePosition(item, resumeSeconds);
     }
-    // Same asymmetry as the episode path above: a cache entry that says
-    // "finished" clears a stale resume, but no entry at all is silence and must
-    // leave the item's own resume alone.
-    return cached ? withoutResumePosition(item) : item;
+    // Same asymmetry as the episode path above: "finished" from either source
+    // clears a stale resume, but no answer at all is silence and must leave
+    // the item's own resume alone.
+    return progress ? withoutResumePosition(item) : item;
 };
 
 export const shouldAutoRecoverPlayback = (source: MobilePlayableAudio['source'] | undefined) =>

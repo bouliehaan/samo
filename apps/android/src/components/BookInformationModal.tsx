@@ -84,6 +84,7 @@ export const BookInformationModal = ({
                         letter={title.slice(0, 1)}
                         style={styles.bookInfoArtwork}
                         uri={artworkUrl}
+                        width={styles.bookInfoArtwork.width}
                     />
                 </View>
                 <Text style={styles.bookInfoEyebrow}>{eyebrow}</Text>

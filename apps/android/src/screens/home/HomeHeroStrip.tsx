@@ -73,6 +73,7 @@ const HomeHeroCard = memo(
                         serverConnection={serverConnection}
                         style={styles.homeHeroNoticeArt}
                         uri={sleeve.artworkUrl}
+                        width={styles.homeHeroNoticeArt.width}
                     />
                     <View style={styles.homeHeroCopy}>
                         {hero?.eyebrow ? (

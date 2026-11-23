@@ -22,7 +22,7 @@ import {
     getRecentContentItemKey,
 } from '../services/recent-content';
 import { type CollectionItemSortMode } from '../utils/collection-sort';
-import { VIEW_ALL_ROW_HEIGHT } from '../theme/layout';
+import { VIEW_ALL_ROW_HEIGHT, VIEW_ALL_TILE_SIZE } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { type ViewAllRoute } from '../types/view-all';
 
@@ -61,6 +61,7 @@ const ViewAllTile = memo(({ item, onOpenContextMenu, onSelectItem }: ViewAllTile
                     isArtist && styles.libraryArtworkRound,
                 ]}
                 uri={item.artworkUrl}
+                width={VIEW_ALL_TILE_SIZE}
             />
             <View style={styles.tileMetaRow}>
                 <View style={styles.tileMetaTextCol}>

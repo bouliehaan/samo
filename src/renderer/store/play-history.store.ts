@@ -122,9 +122,17 @@ const compactItems = (items: RecentItem[]) =>
         .sort((a, b) => b.selectedAt - a.selectedAt)
         .slice(0, RECENT_ITEM_LIMIT);
 
+/** Server ids drift across restarts; mediaType + itemId does not. */
+const stableRecentId = (item: Pick<RecentItem, 'itemId' | 'mediaType'>) =>
+    `${item.mediaType}:${item.itemId}`;
+
+/** Enough to outlast every server entry a removal could be hiding. */
+const DISMISSED_LIMIT = 200;
+
 interface PlayHistoryState {
     actions: {
         clear: () => void;
+        mergeFromServer: (entries: RecentItem[]) => void;
         pruneStale: (args: {
             knownItemIds: Set<string>;
             mediaType: RecentItemType;
@@ -133,6 +141,14 @@ interface PlayHistoryState {
         record: (entry: RecentItemInput) => void;
         remove: (key: string) => void;
     };
+    /** When the whole list was last cleared. */
+    clearedAt: number;
+    /**
+     * When each item was removed by hand, by stable id. The server keeps the
+     * plays a removed entry came from, so without this the next merge would
+     * put it straight back; a play after the removal still brings it back.
+     */
+    dismissed: Record<string, number>;
     items: RecentItem[];
 }
 
@@ -140,7 +156,40 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
     persist(
         (set) => ({
             actions: {
-                clear: () => set({ items: [] }),
+                clear: () => set({ clearedAt: Date.now(), dismissed: {}, items: [] }),
+                // Server entries arrive stamped with when they were played.
+                // One the list already holds keeps what this device recorded
+                // and only moves up when the server heard a later play (from
+                // here or another device); one it lacks is added as given.
+                mergeFromServer: (entries) =>
+                    set((state) => {
+                        const byId = new Map(
+                            state.items.map((item) => [stableRecentId(item), item]),
+                        );
+                        let changed = false;
+
+                        for (const entry of entries) {
+                            const id = stableRecentId(entry);
+                            if (
+                                !entry.itemId ||
+                                !entry.serverId ||
+                                entry.selectedAt <= state.clearedAt ||
+                                entry.selectedAt <= (state.dismissed[id] ?? 0)
+                            ) {
+                                continue;
+                            }
+                            const local = byId.get(id);
+                            if (!local) {
+                                byId.set(id, withCleanArtwork(entry));
+                                changed = true;
+                            } else if (entry.selectedAt > local.selectedAt) {
+                                byId.set(id, { ...local, selectedAt: entry.selectedAt });
+                                changed = true;
+                            }
+                        }
+
+                        return changed ? { items: compactItems([...byId.values()]) } : state;
+                    }),
                 pruneStale: ({ knownItemIds, mediaType, serverId }) =>
                     set((state) => {
                         const nextItems = state.items.filter((item) => {
@@ -181,10 +230,27 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
                     }));
                 },
                 remove: (key) =>
-                    set((state) => ({
-                        items: state.items.filter((item) => item.key !== key),
-                    })),
+                    set((state) => {
+                        const removed = state.items.find((item) => item.key === key);
+                        const dismissed = removed
+                            ? Object.fromEntries(
+                                  Object.entries({
+                                      ...state.dismissed,
+                                      [stableRecentId(removed)]: Date.now(),
+                                  })
+                                      .sort(([, a], [, b]) => b - a)
+                                      .slice(0, DISMISSED_LIMIT),
+                              )
+                            : state.dismissed;
+
+                        return {
+                            dismissed,
+                            items: state.items.filter((item) => item.key !== key),
+                        };
+                    }),
             },
+            clearedAt: 0,
+            dismissed: {},
             items: [],
         }),
         {
@@ -200,7 +266,11 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
                 return { items: (state?.items ?? []).map(withCleanArtwork) };
             },
             name: 'recent-items-store',
-            partialize: (state) => ({ items: state.items }),
+            partialize: (state) => ({
+                clearedAt: state.clearedAt,
+                dismissed: state.dismissed,
+                items: state.items,
+            }),
             version: PERSIST_VERSION_STREAM_TOKEN_STRIPPED,
         },
     ),
@@ -220,9 +290,18 @@ const countText = (count: null | number | undefined, singular: string) => {
 const withDetail = (type: string, detail?: null | number | string) =>
     detail ? `${type} • ${detail}` : type;
 
-export const recordRecentAlbum = (album: Album) => {
-    if (!album._serverId) return;
-    recordRecentItem({
+// Each recent*Entry builds the entry for one kind of thing; the matching
+// recordRecent* records it. The builders are shared with the server merge
+// (samo-recents.ts) so an entry rebuilt from the server reads exactly like
+// one this device recorded.
+
+const recordEntry = (entry: null | RecentItemInput) => {
+    if (entry) recordRecentItem(entry);
+};
+
+export const recentAlbumEntry = (album: Album): null | RecentItemInput => {
+    if (!album._serverId) return null;
+    return {
         artwork: {
             imageId: album.imageId,
             imageItemType: LibraryItem.ALBUM,
@@ -235,19 +314,21 @@ export const recordRecentAlbum = (album: Album) => {
         serverId: album._serverId,
         subtitle: withDetail('Album', album.albumArtistName || countText(album.songCount, 'song')),
         title: album.name,
-    });
+    };
 };
 
-export const recordRecentArtist = (
+export const recordRecentAlbum = (album: Album) => recordEntry(recentAlbumEntry(album));
+
+export const recentArtistEntry = (
     artist: AlbumArtist | RelatedAlbumArtist | RelatedArtist,
     fallback?: { serverId?: string },
-) => {
+): null | RecentItemInput => {
     const serverId = '_serverId' in artist ? artist._serverId : fallback?.serverId;
-    if (!serverId) return;
+    if (!serverId) return null;
 
     const imageId = 'imageId' in artist && artist.imageId ? artist.imageId : artist.id;
 
-    recordRecentItem({
+    return {
         artwork: {
             imageId,
             imageItemType: LibraryItem.ALBUM_ARTIST,
@@ -264,12 +345,17 @@ export const recordRecentArtist = (
             'albumCount' in artist ? countText(artist.albumCount, 'album') : undefined,
         ),
         title: artist.name,
-    });
+    };
 };
 
-export const recordRecentPlaylist = (playlist: Playlist) => {
-    if (!playlist._serverId) return;
-    recordRecentItem({
+export const recordRecentArtist = (
+    artist: AlbumArtist | RelatedAlbumArtist | RelatedArtist,
+    fallback?: { serverId?: string },
+) => recordEntry(recentArtistEntry(artist, fallback));
+
+export const recentPlaylistEntry = (playlist: Playlist): null | RecentItemInput => {
+    if (!playlist._serverId) return null;
+    return {
         artwork: {
             imageId: playlist.imageId,
             imageItemType: LibraryItem.PLAYLIST,
@@ -282,14 +368,20 @@ export const recordRecentPlaylist = (playlist: Playlist) => {
         serverId: playlist._serverId,
         subtitle: withDetail('Playlist', countText(playlist.songCount, 'song')),
         title: playlist.name,
-    });
+    };
+};
+
+export const recordRecentPlaylist = (playlist: Playlist) => {
+    const entry = recentPlaylistEntry(playlist);
+    if (!entry) return;
+    recordRecentItem(entry);
 
     touchSamoPlaylistLastPlayed(playlist);
 };
 
-export const recordRecentSong = (song: Song) => {
-    if (!song._serverId) return;
-    recordRecentItem({
+export const recentSongEntry = (song: Song): null | RecentItemInput => {
+    if (!song._serverId) return null;
+    return {
         artwork: {
             imageId: song.imageId,
             imageItemType: LibraryItem.SONG,
@@ -303,8 +395,10 @@ export const recordRecentSong = (song: Song) => {
         song,
         subtitle: withDetail('Song', song.artistName || song.album),
         title: song.name,
-    });
+    };
 };
+
+export const recordRecentSong = (song: Song) => recordEntry(recentSongEntry(song));
 
 export const recordRecentRadioStation = (station: InternetRadioStation, serverId: string) => {
     if (!serverId) return;
@@ -340,12 +434,15 @@ const getAbsAuthor = (item: LongFormLibraryItem) => {
     );
 };
 
-export const recordRecentAudiobook = (item: LongFormLibraryItem, serverId: string) => {
-    if (!serverId) return;
+export const recentAudiobookEntry = (
+    item: LongFormLibraryItem,
+    serverId: string,
+): null | RecentItemInput => {
+    if (!serverId) return null;
     const publishedYear =
         item.media?.metadata?.publishedYear ?? item.media?.publishedYear ?? undefined;
 
-    recordRecentItem({
+    return {
         artwork: {
             fallbackIcon: 'metadata',
             imageUrl: item.media?.metadata?.imageUrl,
@@ -358,12 +455,18 @@ export const recordRecentAudiobook = (item: LongFormLibraryItem, serverId: strin
         serverId,
         subtitle: withDetail('Audiobook', getAbsAuthor(item) || publishedYear),
         title: getAbsTitle(item),
-    });
+    };
 };
 
-export const recordRecentPodcast = (item: LongFormLibraryItem, serverId: string) => {
-    if (!serverId) return;
-    recordRecentItem({
+export const recordRecentAudiobook = (item: LongFormLibraryItem, serverId: string) =>
+    recordEntry(recentAudiobookEntry(item, serverId));
+
+export const recentPodcastEntry = (
+    item: LongFormLibraryItem,
+    serverId: string,
+): null | RecentItemInput => {
+    if (!serverId) return null;
+    return {
         artwork: {
             fallbackIcon: 'microphone',
             imageUrl: item.media?.metadata?.imageUrl,
@@ -379,5 +482,8 @@ export const recordRecentPodcast = (item: LongFormLibraryItem, serverId: string)
             countText(item.numEpisodes, 'episode') || getAbsAuthor(item),
         ),
         title: getAbsTitle(item),
-    });
+    };
 };
+
+export const recordRecentPodcast = (item: LongFormLibraryItem, serverId: string) =>
+    recordEntry(recentPodcastEntry(item, serverId));

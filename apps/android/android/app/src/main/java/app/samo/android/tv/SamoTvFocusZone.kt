@@ -1,11 +1,13 @@
 package app.samo.android.tv
 
 import android.content.Context
+import android.graphics.Rect
 import android.view.FocusFinder
 import android.view.View
 import android.view.ViewGroup
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.annotations.ReactProp
+import com.facebook.react.views.scroll.ReactScrollView
 import com.facebook.react.views.view.ReactViewGroup
 import com.facebook.react.views.view.ReactViewManager
 
@@ -25,6 +27,18 @@ import com.facebook.react.views.view.ReactViewManager
  * a gate goes nowhere. Searching the whole screen and refusing what lay
  * outside was not the same: a rail icon nearer than the filter pill above a
  * cover won the search, was refused, and Up went nowhere at all.
+ *
+ * A sideways move stays in its row. Android will take a control that is
+ * further over but on another line when nothing is level with the one focus
+ * is on, so Left from a button beside a cover found the cover in the row
+ * below it instead of leaving for the rail.
+ *
+ * An up or down move stays in its list while the list has somewhere to go.
+ * Rows a list has scrolled away still have their places, just off the list's
+ * edge — behind whatever is fixed beside it — so Up from a row on Home found
+ * the filter pills, which looked nearer than the rows scrolled up under them.
+ * A React Native list once did this itself (`ScrollView.arrowScroll`), but
+ * jumped as it did, so the TV's lists no longer take the D-pad.
  */
 class SamoTvFocusZoneView(context: Context) : ReactViewGroup(context) {
   var gateLeft = View.NO_ID
@@ -48,6 +62,18 @@ class SamoTvFocusZoneView(context: Context) : ReactViewGroup(context) {
         if (value) ViewGroup.FOCUS_BLOCK_DESCENDANTS else openFocusability
     }
 
+  private val from = Rect()
+  private val to = Rect()
+
+  /** Whether two controls in this zone overlap vertically: are on one line. */
+  private fun sharesRow(a: View, b: View): Boolean {
+    a.getDrawingRect(from)
+    offsetDescendantRectToMyCoords(a, from)
+    b.getDrawingRect(to)
+    offsetDescendantRectToMyCoords(b, to)
+    return from.top < to.bottom && to.top < from.bottom
+  }
+
   override fun focusSearch(focused: View?, direction: Int): View? {
     val gate = when (direction) {
       View.FOCUS_LEFT -> gateLeft
@@ -58,7 +84,18 @@ class SamoTvFocusZoneView(context: Context) : ReactViewGroup(context) {
       else -> return super.focusSearch(focused, direction)
     }
     if (focused == null) return super.focusSearch(focused, direction)
-    FocusFinder.getInstance().findNextFocus(this, focused, direction)?.let { return it }
+    val finder = FocusFinder.getInstance()
+    if (direction == View.FOCUS_UP || direction == View.FOCUS_DOWN) {
+      var parent = focused.parent
+      while (parent is View && parent !== this) {
+        if (parent is ReactScrollView) finder.findNextFocus(parent, focused, direction)?.let { return it }
+        parent = parent.parent
+      }
+    }
+    finder.findNextFocus(this, focused, direction)?.let { next ->
+      val sideways = direction == View.FOCUS_LEFT || direction == View.FOCUS_RIGHT
+      if (!sideways || sharesRow(focused, next)) return next
+    }
     if (gate == View.NO_ID) return null
     return rootView.findViewById<View>(gate)?.takeIf { it.isShown && it.isFocusable }
   }

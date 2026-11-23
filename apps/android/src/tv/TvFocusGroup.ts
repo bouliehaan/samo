@@ -11,5 +11,8 @@ import { requireNativeComponent, type StyleProp, type ViewStyle } from 'react-na
  */
 export const TvFocusGroup = requireNativeComponent<{
     children: ReactNode;
+    /** Enter instead at the control whose leading edge is nearest this far
+     *  in: a row of covers, at the one on the page's keyline. */
+    entryInset?: number;
     style?: StyleProp<ViewStyle>;
 }>('SamoTvFocusGroup');

@@ -127,6 +127,14 @@ export const prefetchCatalogArtwork = (
     // already been installed).
     const runId = nextRunId += 1;
     const previous = inFlight;
+    // Claimed before the run starts, not after. An async function runs
+    // synchronously up to its first await, so with no previous run to wait on,
+    // a claim made after the call was not there yet when the run checked it:
+    // the run returned at once, never reached the teardown that clears the
+    // latch, and its settled promise then answered every later warm for that
+    // connection. From July to November 2026 a library warm ran only after a
+    // switch of server.
+    activeRunId = runId;
 
     const run = (async (): Promise<void> => {
         // Let a previous run observe its cancellation before starting, so the
@@ -153,7 +161,6 @@ export const prefetchCatalogArtwork = (
         }
     })();
 
-    activeRunId = runId;
     inFlight = run;
     inFlightKey = connectionKey;
     return run;

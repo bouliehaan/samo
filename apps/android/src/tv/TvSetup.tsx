@@ -94,7 +94,7 @@ function TvServerChoice({ onAddress }: { onAddress: () => void }) {
     return (
         <TvFocusScope defaultFocus={first ? serverFocusId(first) : 'enter-address'}>
             {notice ? <Text style={s.error}>{notice}</Text> : null}
-            <Text style={s.sectionTitle}>
+            <Text style={s.setupTitle}>
                 {first ? 'Choose your server' : 'Looking for your samo server…'}
             </Text>
             {discoveredServers.map((server) => (
@@ -106,17 +106,14 @@ function TvServerChoice({ onAddress }: { onAddress: () => void }) {
                         setServerUrl(server.Address);
                         void startDevicePairing(server.Address);
                     }}
+                    style={s.serverButton}
                 >
-                    {(focused) => (
-                        <>
-                            <Text style={[s.text, focused && s.buttonTextFocused]}>
-                                {server.Name}
-                            </Text>
-                            <Text style={[s.muted, focused && s.buttonTextFocused]}>
-                                {displayAddress(server.Address)}
-                            </Text>
-                        </>
-                    )}
+                    <Text numberOfLines={1} style={s.text}>
+                        {server.Name}
+                    </Text>
+                    <Text numberOfLines={1} style={s.meta}>
+                        {displayAddress(server.Address)}
+                    </Text>
                 </TvButton>
             ))}
             <Text style={s.muted}>
@@ -141,7 +138,7 @@ function TvAddressEntry({ onPassword }: { onPassword: () => void }) {
     };
     return (
         <TvFocusScope defaultFocus="server-url">
-            <Text style={s.sectionTitle}>Your server’s address</Text>
+            <Text style={s.setupTitle}>Your server’s address</Text>
             <TvTextInput
                 id="server-url"
                 label="For example 192.168.1.20:6969"
@@ -175,7 +172,7 @@ function TvPasswordSignIn({ run, onCode }: { run: TvRunAction; onCode: () => voi
     const canConnect = !busy && canConnectWith({ password, serverUrl, username });
     return (
         <TvFocusScope defaultFocus={hasServerUrlTarget(serverUrl) ? 'username' : 'server-url'}>
-            <Text style={s.sectionTitle}>Sign in with a password</Text>
+            <Text style={s.setupTitle}>Sign in with a password</Text>
             <TvTextInput
                 id="server-url"
                 label="Server address"
@@ -243,7 +240,7 @@ function TvPairingCode({
                 <View style={s.pairing}>
                     <TvQrCode value={pairing.request.verificationUrlComplete} maxSize={168} />
                     <View style={s.pairingCopy}>
-                        <Text style={s.sectionTitle}>Approve this TV</Text>
+                        <Text style={s.setupTitle}>Approve this TV</Text>
                         <Text style={s.text}>
                             Scan with your phone’s camera, sign in if asked, and approve.
                         </Text>
@@ -351,13 +348,15 @@ export function TvSetup({ run }: { run: TvRunAction }) {
 export function TvSettings({ run }: { run: TvRunAction }) {
     const connection = useAuthSessionSelector((state) => state.serverConnection);
     return (
-        <View style={s.scroll}>
-            <Text style={s.pageTitle}>Settings</Text>
+        <View>
+            <View style={s.pageHeader}>
+                <Text style={s.pageTitle}>Settings</Text>
+            </View>
             {connection ? (
                 <View style={s.settingsPanel}>
-                    <Text style={s.eyebrow}>Server</Text>
-                    <Text style={s.sectionTitle}>{displayAddress(connection.url)}</Text>
-                    <Text style={s.settingsDetail}>
+                    <Text style={s.label}>Server</Text>
+                    <Text style={s.settingsServer}>{displayAddress(connection.url)}</Text>
+                    <Text style={[s.muted, s.settingsDetail]}>
                         {[
                             `Signed in as ${connection.username}`,
                             connection.serverVersion

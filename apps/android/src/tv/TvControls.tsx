@@ -8,11 +8,11 @@ import {
     useMemo,
     useRef,
     useState,
+    type ComponentRef,
     type ReactNode,
     type Ref,
 } from 'react';
 import {
-    findNodeHandle,
     Pressable,
     Text,
     TextInput,
@@ -31,7 +31,8 @@ import {
 } from './tv-focus';
 import { takeTvLongPressClick } from './tv-keys';
 import { resolveTvFocus } from './tv-navigation';
-import { tvStyles as s } from './tv-styles';
+import { TvFocusable, type TvFocusLook } from './TvFocusable';
+import { TV_SCROLL_MARGIN, tvFocus, tvStyles as s } from './tv-styles';
 
 /** How a control takes focus when its scope places it there, and withdraws a
  *  request that has not landed. Each kind of control knows its own way. */
@@ -241,20 +242,23 @@ export function TvFocusScope({
         [choose, owe, settle],
     );
 
-    const remember = useCallback((id: string) => {
-        const state = scope.current;
-        // Covered, this surface only receives focus while Android clears it
-        // off the controls being hidden, never because someone chose one.
-        if (!state.active) return false;
-        state.focused = id;
-        if (id === state.placing) {
-            state.placing = null;
-            state.wantsPlacement = false;
-        } else if (!state.wantsPlacement) {
-            choose(id);
-        }
-        return true;
-    }, [choose]);
+    const remember = useCallback(
+        (id: string) => {
+            const state = scope.current;
+            // Covered, this surface only receives focus while Android clears it
+            // off the controls being hidden, never because someone chose one.
+            if (!state.active) return false;
+            state.focused = id;
+            if (id === state.placing) {
+                state.placing = null;
+                state.wantsPlacement = false;
+            } else if (!state.wantsPlacement) {
+                choose(id);
+            }
+            return true;
+        },
+        [choose],
+    );
 
     const forget = useCallback((id: string) => {
         const state = scope.current;
@@ -344,12 +348,18 @@ export function TvFocusScope({
 }
 
 type TvPressableProps = {
-    children: ReactNode | ((focused: boolean) => ReactNode);
+    /** Where focus puts this control in the list around it (see
+     *  `TvFocusable`). */
+    anchorX?: number;
+    anchorY?: number;
+    children?: ReactNode;
     disabled?: boolean;
-    /** Styles applied while focused, over `style`. */
-    focusedStyle?: StyleProp<ViewStyle>;
     id: string;
     label: string;
+    /** How the control shows focus: drawn natively, never from React. */
+    look: TvFocusLook;
+    /** For the rare control that needs to know (a seek bar's hint, the rail's
+     *  label). Showing focus is `look`'s job, not this one's. */
     onFocusChange?: (focused: boolean) => void;
     onLongPress?: () => void;
     onPress: () => void;
@@ -357,6 +367,8 @@ type TvPressableProps = {
      *  only reaches key listeners (a seek bar, a slider), and a menu's edges
      *  stop focus escaping to the page behind it. */
     pin?: TvFocusPin;
+    /** How far from a list's edges a scroll keeps this control. */
+    scrollMargin?: number;
     selected?: boolean;
     style?: StyleProp<ViewStyle>;
 };
@@ -364,39 +376,40 @@ type TvPressableProps = {
 export type TvFocusPin = { down?: boolean; left?: boolean; right?: boolean; up?: boolean };
 
 /**
- * The one focusable control on the TV. A plain view takes focus through
- * `hasTVPreferredFocus`, and that request outlives the moment it was made:
- * Fabric keeps setNativeProps values on the node and re-applies them with
- * every later update, each time as a fresh requestFocus. Left armed, a control
- * that was placed once pulls focus back whenever it re-renders (its own blur
- * restyles it), and two such controls pass focus between themselves. So the
+ * The one focusable control on the TV.
+ *
+ * It renders once and is not rendered again for focus: the ring, the lift and
+ * the scroll that brings it into view all happen in its native view, in the
+ * frame Android moves focus. React only hears about focus, to place it and
+ * remember it.
+ *
+ * It takes focus through `hasTVPreferredFocus`, and that request outlives the
+ * moment it was made: Fabric keeps setNativeProps values on the node and
+ * re-applies them with every later update, each time as a fresh requestFocus.
+ * Left armed, a control that was placed once pulls focus back whenever it
+ * re-renders, and two such controls pass focus between themselves. So the
  * request is withdrawn the moment focus arrives or leaves. (View's imperative
  * focus() would not linger, but in this React Native it sits behind a feature
  * flag that is off.)
  */
 export const TvPressable = memo(function TvPressable({
+    anchorX,
+    anchorY,
     children,
     disabled = false,
-    focusedStyle,
     id,
     label,
+    look,
     onFocusChange,
     onLongPress,
     onPress,
     pin,
+    scrollMargin = TV_SCROLL_MARGIN,
     selected = false,
     style,
 }: TvPressableProps) {
     const scope = useContext(FocusScopeContext);
-    const ref = useRef<View>(null);
-    const [focused, setFocused] = useState(false);
-    // Pinning names this view as its own next focus in a direction, which
-    // needs its native tag — known only once it is mounted.
-    const [selfTag, setSelfTag] = useState<number | undefined>(undefined);
-    const pinned = pin !== undefined;
-    useEffect(() => {
-        if (pinned) setSelfTag(findNodeHandle(ref.current) ?? undefined);
-    }, [pinned]);
+    const ref = useRef<ComponentRef<typeof TvFocusable>>(null);
     const armed = useRef(false);
     // Read at key time, so a re-render with a new handler never needs to
     // re-announce focus.
@@ -423,7 +436,6 @@ export const TvPressable = memo(function TvPressable({
     const zone = scope?.zone ?? 'content';
     const handleFocus = useCallback(() => {
         release();
-        setFocused(true);
         // Covered, a control only receives focus while Android clears it away
         // to whatever covers it: not the person's doing, and nothing for Back,
         // OK or the placement zone to act on.
@@ -440,7 +452,6 @@ export const TvPressable = memo(function TvPressable({
     }, [id, release, scope, zone]);
     const handleBlur = useCallback(() => {
         release();
-        setFocused(false);
         scope?.forget(id);
         noteTvBlur(id);
         latest.current.onFocusChange?.(false);
@@ -451,42 +462,51 @@ export const TvPressable = memo(function TvPressable({
         latest.current.onPress();
     }, []);
 
+    const reachable = !disabled && (scope?.active ?? true);
     return (
-        <Pressable
+        <TvFocusable
             accessibilityLabel={label}
             accessibilityRole="button"
-            accessible={scope?.active ?? true}
-            accessibilityState={{ disabled: disabled || scope?.active === false, selected }}
-            disabled={disabled || scope?.active === false}
+            accessibilityState={{ disabled: !reachable, selected }}
             // Covered surfaces stay mounted to preserve browsing state, but
             // must leave Android's spatial focus graph while an overlay is up.
             // Android retains focusability for accessible views even when
-            // focusable=false, so accessible/disabled must agree with it.
-            focusable={!disabled && (scope?.active ?? true)}
+            // focusable=false, so the two must agree.
+            accessible={scope?.active ?? true}
+            anchorX={anchorX}
+            anchorY={anchorY}
+            focusable={reachable}
             onBlur={handleBlur}
+            onClick={reachable ? handlePress : undefined}
             onFocus={handleFocus}
             onLayout={scope?.retryPlacement}
-            onPress={handlePress}
-            nextFocusDown={pin?.down ? selfTag : undefined}
-            nextFocusLeft={pin?.left ? selfTag : undefined}
-            nextFocusRight={pin?.right ? selfTag : undefined}
-            nextFocusUp={pin?.up ? selfTag : undefined}
+            pinDown={pin?.down}
+            pinLeft={pin?.left}
+            pinRight={pin?.right}
+            pinUp={pin?.up}
             ref={ref}
-            style={[style, focused && focusedStyle, disabled && s.disabled]}
+            scrollMargin={scrollMargin}
+            style={disabled ? [style, s.disabled] : style}
+            {...look}
         >
-            {typeof children === 'function' ? children(focused) : children}
-        </Pressable>
+            {children}
+        </TvFocusable>
     );
 });
 
-/** A text (or icon) button: the TV's pill, inverting to ink when focused. */
+/**
+ * A text (or icon) button. Its ink never changes with focus, so it never
+ * re-renders for it: the primary one is a silver plate with dark ink at rest
+ * and focused alike, and focus adds the ring.
+ */
 export function TvButton({
+    anchorY,
     children,
     disabled,
-    focusedStyle,
     id,
     label,
-    onFocus,
+    look,
+    onFocusChange,
     onLongPress,
     onPress,
     pin,
@@ -494,12 +514,14 @@ export function TvButton({
     selected = false,
     style,
 }: {
-    children?: ReactNode | ((focused: boolean) => ReactNode);
+    anchorY?: number;
+    /** In place of the label: an icon, or an icon and text. */
+    children?: ReactNode;
     disabled?: boolean;
-    focusedStyle?: StyleProp<ViewStyle>;
     id: string;
     label: string;
-    onFocus?: () => void;
+    look?: TvFocusLook;
+    onFocusChange?: (focused: boolean) => void;
     onLongPress?: () => void;
     onPress: () => void;
     pin?: TvFocusPin;
@@ -509,35 +531,23 @@ export function TvButton({
 }) {
     return (
         <TvPressable
+            anchorY={anchorY}
             disabled={disabled}
-            focusedStyle={focusedStyle ?? s.buttonFocused}
             id={id}
             label={label}
-            onFocusChange={onFocus ? (focused) => focused && onFocus() : undefined}
+            look={look ?? (primary ? tvFocus.buttonPrimary : tvFocus.button)}
+            onFocusChange={onFocusChange}
             onLongPress={onLongPress}
             onPress={onPress}
             pin={pin}
             selected={selected}
             style={[s.button, primary && s.buttonPrimary, selected && s.buttonSelected, style]}
         >
-            {(focused) =>
-                typeof children === 'function' ? (
-                    children(focused)
-                ) : children !== undefined ? (
-                    children
-                ) : (
-                    <Text
-                        numberOfLines={1}
-                        style={[
-                            s.buttonText,
-                            primary && s.buttonTextPrimary,
-                            focused && s.buttonTextFocused,
-                        ]}
-                    >
-                        {label}
-                    </Text>
-                )
-            }
+            {children ?? (
+                <Text numberOfLines={1} style={[s.buttonText, primary && s.buttonTextPrimary]}>
+                    {label}
+                </Text>
+            )}
         </TvPressable>
     );
 }

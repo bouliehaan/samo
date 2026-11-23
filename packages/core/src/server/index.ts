@@ -10,6 +10,7 @@ export * from './server-samo-channels';
 export * from './server-samo-heroes';
 export * from './server-samo-pagination';
 export * from './server-samo-radio';
+export * from './server-samo-recents';
 export * from './server-samo-stream-token';
 export * from './server-session';
 export * from './server-types';

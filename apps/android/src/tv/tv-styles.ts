@@ -1,683 +1,694 @@
-import { StyleSheet } from 'react-native';
+import { processColor, StyleSheet } from 'react-native';
 
-import { colors, fonts, radii } from '../theme/tokens';
+import { colors, fonts } from '../theme/tokens';
+import { type TvFocusLook } from './TvFocusable';
 
 /**
- * The TV in the phone's own materials — the same tokens, faces and cover
- * treatment — sized for a screen read from across a room.
+ * The TV in the phone's own materials — the same tokens, faces, chips and
+ * cover treatment — sized for a screen read from across a room.
  *
  * TV dp are already density-scaled by Android: a 1080p panel is a 960×540dp
  * canvas. Essential chrome stays inside the 5% overscan-safe area.
  */
 export const TV_SAFE_Y = 27;
 export const TV_SAFE_RIGHT = 48;
-/** The rail: the phone's tab icons, standing on the left edge. */
-export const TV_RAIL_WIDTH = 78;
-/** Where content starts: the rail plus the seam the focus guide lives on. */
-export const TV_CONTENT_LEFT = 104;
-export const TV_TILE = 144;
-export const TV_TILE_GAP = 16;
-/** Room around a row for a focused tile's lift, so it is never clipped. */
-export const TV_FOCUS_BLEED = 10;
-export const TV_GRID_COLUMNS = 5;
+/** The rail: the phone's tab icons, standing on the left edge. Content lives
+ *  in everything to its right, and scrolls under it. */
+export const TV_RAIL_WIDTH = 76;
 /**
- * How far from a list's edges a scroll keeps the focused control. Android's
- * scroll views leave their fading edge clear of it, so this is also the fade:
- * focus never sits flush against an edge (or in a TV's overscan), and what is
- * cut off below fades instead of ending in a hard line.
+ * The page's keyline, measured from the rail: every heading, the first cover
+ * of every row and every list row start here. A row scrolls its focused cover
+ * back to it, so focus has one place on screen and covers that have passed it
+ * slide out under the rail instead of ending at a hard edge.
  */
-export const TV_SCROLL_EDGE = 64;
-/** The same for shelves, whose edge is the screen's own, past the safe area. */
-export const TV_SHELF_EDGE = 48;
+export const TV_GUTTER = 36;
+export const TV_TILE = 144;
+export const TV_TILE_GAP = 20;
+export const TV_WIDE_TILE = 320;
+export const TV_GRID_COLUMNS = 5;
+/** Room above and below a row's covers for a focused one's lift and ring. */
+export const TV_ROW_BLEED = 14;
+/** How far from a list's edges a scroll keeps a focused control that has no
+ *  anchor of its own. */
+export const TV_SCROLL_MARGIN = 56;
+/** "The top of the page", as an anchor: further down than any header is tall,
+ *  so the list scrolls all the way up for it. */
+export const TV_ANCHOR_TOP = 2000;
 export const TV_QUEUE_ROW_HEIGHT = 56;
 
-const FOCUS_INK = colors.background;
-const FOCUS_FILL = colors.accentBright;
-const QUIET_FILL = 'rgba(255, 255, 255, 0.08)';
+/**
+ * What every list on the TV hands its scroll view: the controls in it bring
+ * themselves into view (`SamoTvFocusable.kt`), so the scroll view must not.
+ *
+ * Left alone it does, twice over. React Native jumps a focused child on
+ * screen (`scrollsChildToFocus`); and Android's scroll views take the D-pad
+ * themselves, before focus moves, and scroll just far enough to put the next
+ * control flush against their edge — where a cover's ring is cut off by the
+ * clip. `scrollEnabled` is what stops that (it gates their key handling as
+ * well as touch, which a TV has none of); scrolling in code is unaffected.
+ *
+ * Clipped views stay attached so the D-pad can always find the row beyond
+ * the edge before the list has scrolled to it.
+ *
+ * A glide is the scroll view animating itself on the UI thread, and a list
+ * otherwise tells JavaScript where it is on every frame of it — fifteen
+ * events a move, for windowing that needs one now and then. A tenth of a
+ * second apart is still several times what a row's window of covers ahead
+ * of focus needs.
+ */
+export const TV_LIST_PROPS = {
+    removeClippedSubviews: false,
+    scrollEnabled: false,
+    scrollEventThrottle: 100,
+    scrollsChildToFocus: false,
+    showsHorizontalScrollIndicator: false,
+    showsVerticalScrollIndicator: false,
+} as const;
+
+const SHELF_TITLE_HEIGHT = 24;
+const SHELF_TITLE_GAP = 6;
+/** From the top of a shelf's title to the top of its covers. */
+const SHELF_TITLE_TO_COVERS = SHELF_TITLE_HEIGHT + SHELF_TITLE_GAP + TV_ROW_BLEED;
+/**
+ * Where a shelf's covers sit once focus is on one: its title at the top of
+ * the safe area, the shelf before it gone under the top fade. Anchored any
+ * higher, the title is what goes under the fade, and a row of covers with no
+ * name is left at the top of the page.
+ */
+export const TV_SHELF_ANCHOR_Y = TV_SAFE_Y + SHELF_TITLE_TO_COVERS;
+/** The same on Home, whose list starts under its bar of filters rather than
+ *  at the top of the screen. */
+export const TV_HOME_SHELF_ANCHOR_Y = 10 + SHELF_TITLE_TO_COVERS;
+/** The same for a grid's rows, which have no title: the focused row's ring
+ *  just clear of the top fade. */
+export const TV_GRID_ANCHOR_Y = TV_SAFE_Y + TV_ROW_BLEED;
+
+const QUIET_FILL = 'rgba(255, 255, 255, 0.07)';
+const FOCUS_RING = colors.accentBright;
+const FOCUS_FILL = 'rgba(255, 255, 255, 0.10)';
+
+const argb = (color: string): number => processColor(color) as number;
+
+const look = (
+    radius: number,
+    options: { fill?: boolean; height?: number; outset?: number; scale?: number } = {},
+): TvFocusLook => ({
+    fillColor: options.fill ? argb(FOCUS_FILL) : undefined,
+    focusScale: options.scale ?? 1,
+    ringColor: argb(FOCUS_RING),
+    ringHeight: options.height,
+    ringOutset: options.outset ?? 3,
+    ringRadius: radius,
+    ringWidth: 2,
+});
+
+/**
+ * Focus, one language everywhere: a silver ring, set off from the control by
+ * a hair. A cover also lifts; a row also fills, and stays put (scaling one
+ * row would break its column's edge). Ink never changes, so nothing has to
+ * re-render to show it.
+ */
+export const tvFocus = {
+    button: look(22, { fill: true, scale: 1.04 }),
+    buttonPrimary: look(22, { scale: 1.04 }),
+    card: look(12, { scale: 1.04 }),
+    chip: look(18, { scale: 1.04 }),
+    icon: look(22, { fill: true, scale: 1.06 }),
+    rail: look(14, { fill: true, outset: 2, scale: 1.06 }),
+    row: look(10, { fill: true, outset: 0 }),
+    seek: look(12, { fill: true, outset: 0 }),
+    tile: look(8, { height: TV_TILE, scale: 1.06 }),
+    tileRound: look(TV_TILE / 2, { height: TV_TILE, scale: 1.06 }),
+    transport: look(24, { fill: true, scale: 1.08 }),
+    transportPrimary: look(32, { outset: 4, scale: 1.06 }),
+} as const;
+
+const display = {
+    color: colors.text,
+    fontFamily: fonts.heading,
+    letterSpacing: -0.8,
+} as const;
+
+const label = {
+    color: colors.muted,
+    fontFamily: fonts.monoBold,
+    fontSize: 11,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+} as const;
 
 export const tvStyles = StyleSheet.create({
     root: { backgroundColor: colors.background, flex: 1 },
-    homeChrome: {
-        backgroundColor: colors.background,
-        paddingLeft: TV_FOCUS_BLEED,
-        paddingRight: TV_SAFE_RIGHT,
-        paddingTop: 30,
-        zIndex: 2,
-    },
-    homeHeader: {
-        alignItems: 'baseline',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 16,
-    },
-    homeTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 34,
-        letterSpacing: -0.8,
-    },
-    homeKicker: {
-        color: colors.faint,
-        fontFamily: fonts.monoBold,
-        fontSize: 11,
-        letterSpacing: 1.8,
-        textTransform: 'uppercase',
-    },
-    homeFilters: {
-        borderBottomColor: colors.border,
-        borderBottomWidth: 1,
-        paddingBottom: 2,
-    },
-    homeMessage: { marginLeft: TV_FOCUS_BLEED },
-    homeScroll: {
-        paddingTop: 6,
-        paddingLeft: TV_FOCUS_BLEED,
-        paddingRight: TV_SAFE_RIGHT,
-        paddingBottom: TV_SCROLL_EDGE,
-    },
-    trackListHeading: { marginBottom: 10, marginTop: 28 },
-    transportSelected: {
-        backgroundColor: colors.accentSoft,
-    },
     hidden: { display: 'none' },
     fill: { ...StyleSheet.absoluteFill },
 
-    // ── Sign in ──────────────────────────────────────────────────────────
-    setupFrame: { flex: 1, paddingHorizontal: '5%', paddingVertical: '5%' },
-    brand: { color: colors.text, fontFamily: fonts.heading, fontSize: 38, marginBottom: 16 },
-    // Sign-in is laid out across the screen, not down it: stacked, the brand
-    // alone took a third of the height and pushed the code screen's buttons to
-    // the bottom edge.
-    setup: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 48 },
-    setupIntro: { width: 280 },
-    setupLogo: { height: 44, marginBottom: 14, width: 44 },
-    // Room past the panel's edges for a focused control's outline, which a
-    // scroll view would otherwise clip.
-    setupPanel: { alignSelf: 'stretch', flex: 1, marginHorizontal: -TV_FOCUS_BLEED },
-    setupContent: {
-        flexGrow: 1,
-        gap: 18,
-        justifyContent: 'center',
-        paddingHorizontal: TV_FOCUS_BLEED,
-        paddingVertical: 8,
-    },
-    pairing: { alignItems: 'center', flexDirection: 'row', gap: 24 },
-    pairingCopy: { flex: 1, gap: 8 },
-    pairingCode: { color: colors.text, fontFamily: fonts.monoBold, fontSize: 38, letterSpacing: 5 },
-    pairingUrl: { color: colors.text, fontFamily: fonts.mono },
-
     // ── Type ─────────────────────────────────────────────────────────────
+    /** A screen's name. */
+    pageTitle: { ...display, fontSize: 28, lineHeight: 34 },
+    /** A row's name, in the phone's section-heading voice. */
     sectionTitle: {
-        color: colors.muted,
-        fontFamily: fonts.monoBold,
-        fontSize: 12,
-        letterSpacing: 1.4,
-        marginBottom: 8,
-        textTransform: 'uppercase',
+        color: colors.text,
+        fontFamily: fonts.heading,
+        fontSize: 19,
+        height: SHELF_TITLE_HEIGHT,
+        letterSpacing: -0.2,
+        lineHeight: SHELF_TITLE_HEIGHT,
+        marginBottom: SHELF_TITLE_GAP,
     },
-    text: { color: colors.text, fontFamily: fonts.body, fontSize: 17 },
+    /** The phone's small mono caption: a kind ("Album"), a state ("Now playing"). */
+    label,
+    /** One line that says why something is here. */
+    eyebrow: { color: colors.accent, fontFamily: fonts.body, fontSize: 14, fontWeight: '700' },
+    text: { color: colors.text, fontFamily: fonts.body, fontSize: 17, lineHeight: 24 },
     muted: { color: colors.muted, fontFamily: fonts.body, fontSize: 15, lineHeight: 21 },
-    error: { color: '#ffb4ab', fontFamily: fonts.body, fontSize: 16 },
-    eyebrow: {
-        color: colors.accent,
-        fontFamily: fonts.monoBold,
-        fontSize: 11,
-        letterSpacing: 1.4,
-        textTransform: 'uppercase',
-    },
-    scroll: { gap: 18, paddingBottom: 24 },
-    row: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    /** Facts and figures: counts, formats, lengths. */
+    meta: { color: colors.muted, fontFamily: fonts.mono, fontSize: 13, lineHeight: 18 },
+    error: { color: '#ffb4ab', fontFamily: fonts.body, fontSize: 16, lineHeight: 22 },
+    centered: { textAlign: 'center' },
 
     // ── Buttons ──────────────────────────────────────────────────────────
     button: {
         alignItems: 'center',
         backgroundColor: QUIET_FILL,
-        borderRadius: 10,
+        borderRadius: 22,
         flexDirection: 'row',
-        gap: 10,
+        gap: 9,
+        height: 44,
         justifyContent: 'center',
-        minHeight: 44,
         paddingHorizontal: 22,
     },
-    buttonPrimary: { backgroundColor: 'rgba(255, 255, 255, 0.16)' },
-    buttonSelected: { backgroundColor: colors.surfaceHigh },
-    buttonFocused: {
-        backgroundColor: FOCUS_FILL,
-        outlineColor: FOCUS_FILL,
-        outlineWidth: 2,
-        outlineOffset: 2,
-    },
-    quietButton: { backgroundColor: 'transparent', minHeight: 38, paddingHorizontal: 16 },
+    /** The phone's silver plate: the one thing on a screen to press. */
+    buttonPrimary: { backgroundColor: colors.accentBright },
+    buttonSelected: { backgroundColor: 'rgba(255, 255, 255, 0.16)' },
     buttonText: { color: colors.text, fontFamily: fonts.body, fontSize: 16, fontWeight: '700' },
-    buttonTextPrimary: { color: colors.text },
-    buttonTextFocused: { color: FOCUS_INK },
-    iconButton: { minHeight: 48, paddingHorizontal: 0, width: 48 },
+    buttonTextPrimary: { color: colors.background },
+    iconButton: { paddingHorizontal: 0, width: 44 },
     disabled: { opacity: 0.4 },
+    row: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+
+    // ── Chips (the phone's filter pills) ─────────────────────────────────
+    chips: { flexDirection: 'row', gap: 8 },
+    chip: {
+        alignItems: 'center',
+        backgroundColor: QUIET_FILL,
+        borderRadius: 18,
+        height: 36,
+        justifyContent: 'center',
+        paddingHorizontal: 18,
+    },
+    chipActive: { backgroundColor: colors.accentBright },
+    chipText: { color: colors.muted, fontFamily: fonts.body, fontSize: 15, fontWeight: '700' },
+    chipTextActive: { color: colors.background },
 
     // ── Fields ───────────────────────────────────────────────────────────
-    field: { gap: 6 },
+    field: { gap: 8 },
     input: {
         backgroundColor: colors.panel,
-        borderColor: colors.borderStrong,
-        borderRadius: 10,
-        borderWidth: 3,
+        borderColor: 'transparent',
+        borderRadius: 12,
+        borderWidth: 2,
         color: colors.text,
         fontFamily: fonts.body,
-        fontSize: 20,
-        minHeight: 50,
-        padding: 10,
+        fontSize: 19,
+        height: 52,
+        paddingHorizontal: 16,
+        paddingVertical: 0,
     },
-    inputFocused: { backgroundColor: colors.surfaceHigh, borderColor: FOCUS_FILL },
+    inputFocused: { backgroundColor: colors.surface, borderColor: FOCUS_RING },
     placeholder: { color: colors.faint },
 
     // ── Rail ─────────────────────────────────────────────────────────────
     rail: {
+        alignItems: 'center',
+        backgroundColor: colors.background,
         bottom: 0,
+        gap: 6,
         left: 0,
         paddingBottom: TV_SAFE_Y,
-        paddingLeft: 24,
-        paddingRight: 16,
-        paddingTop: 60,
-        gap: 6,
+        paddingTop: TV_SAFE_Y,
         position: 'absolute',
         top: 0,
         width: TV_RAIL_WIDTH,
         zIndex: 20,
     },
-    /** The samo mark, heading the rail rather than floating over content. */
-    railLogo: {
-        height: 26,
-        left: 24 + 11,
-        opacity: 0.85,
-        position: 'absolute',
-        top: 20,
-        width: 26,
-    },
-    railItem: {
-        alignItems: 'center',
-        height: 46,
-        justifyContent: 'center',
-        width: 48,
-    },
-    /** The highlight behind an item, drawn behind its glyph. */
-    railPill: {
-        borderRadius: radii.md,
+    /** Covers leave under the rail through this, not at a hard line. */
+    railFade: {
         bottom: 0,
-        left: 0,
+        left: TV_RAIL_WIDTH,
         position: 'absolute',
         top: 0,
-        width: 48,
+        width: 26,
+        zIndex: 19,
     },
-    railPillFocused: { backgroundColor: colors.surfaceHigh, borderRadius: 14 },
-    railPillSelected: {
-        backgroundColor: 'transparent',
-        borderLeftColor: colors.accent,
-        borderLeftWidth: 3,
+    railLogo: { height: 26, marginBottom: 18, opacity: 0.9, width: 26 },
+    railItem: {
+        alignItems: 'center',
+        borderRadius: 14,
+        height: 44,
+        justifyContent: 'center',
+        width: 44,
     },
-    railNowArt: { backgroundColor: colors.surface, borderRadius: 4, height: 28, width: 28 },
+    /** Where you are: lit, whether or not focus is on it. */
+    railItemSelected: { backgroundColor: 'rgba(255, 255, 255, 0.09)' },
+    railSpacer: { flex: 1 },
+    railNowArt: { backgroundColor: colors.surface, borderRadius: 6, height: 30, width: 30 },
     /** Playing, not paused: a dot on the cover. */
     railNowDot: {
         backgroundColor: colors.accentBright,
         borderColor: colors.background,
-        borderRadius: 5,
+        borderRadius: 6,
         borderWidth: 2,
-        height: 10,
+        height: 12,
         position: 'absolute',
-        right: -4,
-        top: -4,
-        width: 10,
+        right: -5,
+        top: -5,
+        width: 12,
     },
-    guide: {
-        bottom: 0,
-        left: TV_RAIL_WIDTH + 4,
+    /** A destination's name, while focus is on its icon. Its own width: laid
+     *  out inside the icon's 44dp it would be cut down to a letter. */
+    railLabel: {
+        flexDirection: 'row',
+        left: 54,
         position: 'absolute',
-        top: 0,
-        width: 2,
+        top: 7,
+        width: 200,
     },
+    railLabelPill: {
+        backgroundColor: colors.surfaceHigh,
+        borderRadius: 8,
+        height: 30,
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+    },
+    railLabelText: { color: colors.text, fontFamily: fonts.body, fontSize: 14, fontWeight: '700' },
+    guide: { bottom: 0, left: TV_RAIL_WIDTH - 2, position: 'absolute', top: 0, width: 2 },
 
     // ── Pages ────────────────────────────────────────────────────────────
-    content: { bottom: 0, left: TV_CONTENT_LEFT, position: 'absolute', right: 0, top: 0 },
+    content: { bottom: 0, left: TV_RAIL_WIDTH, position: 'absolute', right: 0, top: 0 },
     page: { ...StyleSheet.absoluteFill },
     pageScroll: {
-        paddingBottom: TV_SCROLL_EDGE,
-        paddingLeft: TV_FOCUS_BLEED,
+        paddingBottom: 72,
+        paddingLeft: TV_GUTTER,
         paddingRight: TV_SAFE_RIGHT,
-        paddingTop: 48,
+        paddingTop: 40,
     },
+    /** Rows that have scrolled up leave through this, out of the overscan. */
+    topFade: { height: TV_SAFE_Y, left: 0, position: 'absolute', right: 0, top: 0 },
     pageHeader: {
-        alignItems: 'center',
+        alignItems: 'baseline',
         flexDirection: 'row',
         gap: 14,
         justifyContent: 'space-between',
-        marginBottom: 16,
+        marginBottom: 14,
     },
-    pageTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 30,
-        letterSpacing: -0.6,
+    empty: { gap: 6, maxWidth: 560, paddingTop: 8 },
+    emptyTitle: { color: colors.text, fontFamily: fonts.heading, fontSize: 22, lineHeight: 28 },
+    emptyText: { color: colors.muted, fontFamily: fonts.body, fontSize: 16, lineHeight: 23 },
+
+    // ── Home ─────────────────────────────────────────────────────────────
+    /** The filters, fixed: the page scrolls beneath them. */
+    homeBar: {
+        backgroundColor: colors.background,
+        paddingBottom: 12,
+        paddingLeft: TV_GUTTER,
+        paddingRight: TV_SAFE_RIGHT,
+        paddingTop: TV_SAFE_Y,
+        zIndex: 2,
     },
-    emptyText: {
-        color: colors.muted,
-        fontFamily: fonts.body,
-        fontSize: 16,
-        lineHeight: 23,
-        marginTop: 8,
-        maxWidth: 560,
+    homeScroll: {
+        paddingBottom: 72,
+        paddingLeft: TV_GUTTER,
+        paddingRight: TV_SAFE_RIGHT,
+        paddingTop: 10,
     },
-    emptyTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 22,
-    },
-    searchEmpty: {
-        backgroundColor: colors.panel,
-        borderRadius: 12,
-        marginTop: 10,
-        maxWidth: 680,
-        paddingHorizontal: 24,
-        paddingVertical: 22,
-    },
-    pills: { flexDirection: 'row', gap: 4, marginBottom: 0 },
-    searchResults: { marginTop: 24 },
-    pill: {
+    homeMessage: { paddingLeft: TV_GUTTER, paddingRight: TV_SAFE_RIGHT, paddingTop: 16 },
+
+    // ── Home hero ────────────────────────────────────────────────────────
+    hero: {
         alignItems: 'center',
-        backgroundColor: 'transparent',
-        borderRadius: 0,
-        justifyContent: 'center',
-        minHeight: 40,
-        paddingHorizontal: 14,
+        backgroundColor: colors.panel,
+        borderRadius: 16,
+        flexDirection: 'row',
+        gap: 28,
+        marginBottom: 28,
+        padding: 20,
     },
-    pillActive: {
-        backgroundColor: 'transparent',
-        borderBottomColor: colors.accent,
-        borderBottomWidth: 2,
-    },
-    pillFocused: {
-        backgroundColor: colors.surfaceHigh,
-        borderRadius: 6,
-        outlineColor: colors.accentLine,
-        outlineWidth: 1,
-        outlineOffset: 2,
-    },
-    pillText: { color: colors.muted, fontFamily: fonts.body, fontSize: 15, fontWeight: '600' },
-    pillTextActive: { color: colors.text },
+    heroArt: { backgroundColor: colors.surface, borderRadius: 10, height: 172, width: 172 },
+    heroCopy: { flex: 1, minWidth: 0 },
+    heroTitle: { ...display, fontSize: 34, lineHeight: 38, marginTop: 6 },
+    heroSubtitle: { color: colors.text, fontFamily: fonts.body, fontSize: 17, marginTop: 6 },
+    heroMeta: { marginTop: 4 },
+    heroActions: { flexDirection: 'row', gap: 12, marginTop: 18 },
 
     // ── Shelves and tiles ────────────────────────────────────────────────
-    shelf: { marginBottom: 34 },
-    /** Out to the screen's right edge, so covers pass under it (fading)
-     *  rather than stopping at an invisible line inside the safe area. */
-    shelfScroll: { marginLeft: -TV_FOCUS_BLEED, marginRight: -TV_SAFE_RIGHT },
+    shelf: { marginBottom: 22 },
+    /** Out to both edges of the page: covers arrive from past the screen's
+     *  right edge and leave under the rail. */
+    shelfScroll: { marginLeft: -TV_GUTTER, marginRight: -TV_SAFE_RIGHT },
     shelfRow: {
         gap: TV_TILE_GAP,
-        paddingLeft: TV_FOCUS_BLEED,
+        paddingLeft: TV_GUTTER,
         paddingRight: TV_SAFE_RIGHT,
-        paddingVertical: 12,
+        paddingVertical: TV_ROW_BLEED,
     },
     pendingRow: { flexDirection: 'row', overflow: 'hidden' },
     pendingTile: { opacity: 0.5 },
     pendingTileWide: {
         backgroundColor: colors.surface,
-        borderRadius: 10,
-        height: 120,
-        width: 330,
+        borderRadius: 12,
+        height: 104,
+        width: TV_WIDE_TILE,
     },
     tile: { width: TV_TILE },
-    tileWide: {
-        alignItems: 'center',
-        backgroundColor: colors.panel,
-        borderRadius: 10,
-        flexDirection: 'row',
-        gap: 14,
-        padding: 12,
-        width: 330,
-    },
     tileArt: {
         backgroundColor: colors.surface,
         borderRadius: 8,
         height: TV_TILE,
         width: TV_TILE,
     },
-    tileArtWide: { height: 96, width: 96 },
     tileArtRound: { borderRadius: TV_TILE / 2 },
-    /** Focus is drawn on the cover itself: the border follows its radius
-     *  (round for artists) and, inside the box, never moves the art beside it. */
-    tileArtFocused: { borderColor: colors.accent, borderWidth: 2 },
-    tileWideFocused: { backgroundColor: colors.surfaceHigh },
-    tileMeta: { alignItems: 'flex-start', flexDirection: 'row', gap: 6 },
-    tileMetaText: { flex: 1, minWidth: 0 },
     tileText: { marginTop: 9 },
-    tileTextWide: { flex: 1, marginTop: 0 },
     tileTitle: {
         color: colors.text,
         fontFamily: fonts.body,
         fontSize: 15,
-        fontWeight: '600',
+        fontWeight: '700',
         lineHeight: 19,
     },
-    tileTitleFocused: { color: colors.accentBright },
     tileSubtitle: {
         color: colors.muted,
-        fontFamily: fonts.body,
-        fontSize: 13,
-        lineHeight: 17,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+        lineHeight: 16,
         marginTop: 3,
     },
-    centered: { textAlign: 'center' },
+    /** Something part-heard: a card with room for where you are in it. */
+    tileWide: {
+        alignItems: 'center',
+        backgroundColor: colors.panel,
+        borderRadius: 12,
+        flexDirection: 'row',
+        gap: 14,
+        height: 104,
+        padding: 12,
+        width: TV_WIDE_TILE,
+    },
+    tileArtWide: { borderRadius: 6, height: 80, width: 80 },
+    tileTextWide: { flex: 1, minWidth: 0 },
     tileProgressTrack: {
-        backgroundColor: colors.surfaceHigh,
+        backgroundColor: 'rgba(255, 255, 255, 0.14)',
         borderRadius: 2,
         height: 3,
-        marginTop: 7,
+        marginTop: 8,
         overflow: 'hidden',
     },
     tileProgressFill: { backgroundColor: colors.accent, height: 3 },
     viewAllArt: {
         alignItems: 'center',
         backgroundColor: colors.panel,
-        borderColor: colors.border,
         borderRadius: 8,
-        borderWidth: 1,
+        gap: 10,
         height: TV_TILE,
         justifyContent: 'center',
         width: TV_TILE,
     },
-    viewAllArtFocused: { borderColor: colors.accent, borderWidth: 2 },
-    viewAllText: { color: colors.text, fontFamily: fonts.body, fontSize: 16, fontWeight: '800' },
-    gridRow: { flexDirection: 'row', gap: TV_TILE_GAP, paddingVertical: 10 },
-
-    // ── Home hero ────────────────────────────────────────────────────────
-    hero: {
+    viewAllChevron: {
         alignItems: 'center',
-        backgroundColor: colors.background,
-        flexDirection: 'row',
-        gap: 28,
-        marginBottom: 28,
-        minHeight: 220,
-        overflow: 'hidden',
-        paddingBottom: 30,
-        paddingTop: 18,
+        backgroundColor: QUIET_FILL,
+        borderRadius: 20,
+        height: 40,
+        justifyContent: 'center',
+        width: 40,
     },
-    heroArt: { backgroundColor: colors.surface, borderRadius: 8, height: 176, width: 176 },
-    heroCopy: { flex: 1, gap: 4 },
-    heroTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 32,
-        letterSpacing: -0.6,
-        lineHeight: 33,
-    },
-    heroSubtitle: { color: colors.muted, fontFamily: fonts.body, fontSize: 15, lineHeight: 21 },
-    heroActions: { flexDirection: 'row', gap: 12, marginTop: 12 },
+    viewAllText: { color: colors.muted, fontFamily: fonts.body, fontSize: 14, fontWeight: '700' },
+    gridRow: { flexDirection: 'row', gap: TV_TILE_GAP, paddingVertical: TV_ROW_BLEED },
 
     // ── Detail ───────────────────────────────────────────────────────────
-    detailHeader: {
-        alignItems: 'flex-end',
-        flexDirection: 'row',
-        gap: 28,
-        marginBottom: 26,
-    },
-    /** The page's wash, carried under the rail so it has no seam there. */
-    detailBackdrop: { ...StyleSheet.absoluteFill, left: -TV_CONTENT_LEFT },
-    detailFooter: { marginTop: 24 },
-    detailArt: { backgroundColor: colors.surface, borderRadius: 8, height: 200, width: 200 },
-    detailArtRound: { borderRadius: 92 },
-    detailCopy: { flex: 1, gap: 6, paddingBottom: 2 },
-    detailType: {
-        color: colors.muted,
-        fontFamily: fonts.monoBold,
-        fontSize: 12,
-        letterSpacing: 1.6,
-        textTransform: 'uppercase',
-    },
-    detailTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 32,
-        letterSpacing: -0.7,
-        lineHeight: 37,
-    },
-    detailSubtitle: { color: colors.muted, fontFamily: fonts.body, fontSize: 16 },
-    detailActions: { flexDirection: 'row', gap: 12, marginTop: 14 },
+    detailHeader: { alignItems: 'flex-end', flexDirection: 'row', gap: 28, marginBottom: 26 },
+    detailFooter: { marginTop: 26 },
+    detailArt: { backgroundColor: colors.surface, borderRadius: 10, height: 208, width: 208 },
+    detailArtRound: { borderRadius: 104 },
+    detailCopy: { flex: 1, minWidth: 0 },
+    detailTitle: { ...display, fontSize: 36, lineHeight: 40, marginTop: 6 },
+    detailSubtitle: { color: colors.text, fontFamily: fonts.body, fontSize: 18, marginTop: 6 },
+    detailFacts: { marginTop: 6 },
+    detailActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
+    trackHeading: { marginBottom: 6, marginTop: 14 },
     track: {
         alignItems: 'center',
-        borderRadius: 8,
+        borderRadius: 10,
         flexDirection: 'row',
         gap: 16,
-        height: 62,
-        paddingHorizontal: 16,
-    },
-    trackFocused: {
-        backgroundColor: colors.surfaceHigh,
-        outlineColor: colors.accentLine,
-        outlineWidth: 1,
-        outlineOffset: 2,
+        height: 58,
+        paddingHorizontal: 14,
     },
     trackIndex: {
-        color: colors.muted,
+        color: colors.faint,
         fontFamily: fonts.mono,
         fontSize: 14,
         textAlign: 'right',
-        width: 32,
+        width: 28,
     },
-    trackArt: { backgroundColor: colors.surface, borderRadius: 3, height: 40, width: 40 },
+    trackArt: { backgroundColor: colors.surface, borderRadius: 4, height: 40, width: 40 },
     trackCopy: { flex: 1, minWidth: 0 },
-    trackTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
-    trackSubtitle: { color: colors.muted, fontFamily: fonts.body, fontSize: 13, marginTop: 3 },
+    trackTitle: {
+        color: colors.text,
+        fontFamily: fonts.body,
+        fontSize: 16,
+        fontWeight: '700',
+        lineHeight: 21,
+    },
+    trackSubtitle: {
+        color: colors.muted,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+        lineHeight: 16,
+        marginTop: 2,
+    },
     trackMeta: { color: colors.muted, fontFamily: fonts.mono, fontSize: 13 },
+    /** The track the player has now, picked out from across the room. */
     trackPlaying: { color: colors.accent },
-    trackInkFocused: { color: FOCUS_INK },
 
     // ── Now Playing ──────────────────────────────────────────────────────
     player: { ...StyleSheet.absoluteFill, backgroundColor: colors.background, zIndex: 40 },
-    playerEmpty: {
-        alignItems: 'center',
-        flex: 1,
-        justifyContent: 'center',
-        paddingHorizontal: 64,
-    },
-    playerEmptyTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 34,
-        textAlign: 'center',
-    },
-    playerEmptyText: {
-        color: colors.muted,
-        fontFamily: fonts.body,
-        fontSize: 18,
-        marginTop: 10,
-        textAlign: 'center',
-    },
-    playerEmptyButton: { marginTop: 26 },
     playerBody: {
         alignItems: 'center',
         flex: 1,
         flexDirection: 'row',
-        gap: 60,
+        gap: 56,
+        paddingBottom: 64,
         paddingHorizontal: 64,
-        paddingTop: 96,
-        paddingBottom: 86,
+        paddingTop: TV_SAFE_Y,
     },
-    playerArt: { backgroundColor: colors.surface, borderRadius: 4, height: 304, width: 304 },
+    playerArt: { backgroundColor: colors.surface, borderRadius: 12, height: 316, width: 316 },
     playerInfo: { flex: 1, minWidth: 0 },
-    playerEyebrow: {
-        color: colors.muted,
-        fontFamily: fonts.monoBold,
-        fontSize: 12,
-        letterSpacing: 1.6,
-        marginBottom: 8,
-        textTransform: 'uppercase',
-    },
-    playerTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 34,
-        letterSpacing: -0.8,
-        lineHeight: 40,
-    },
+    playerTitle: { ...display, fontSize: 36, lineHeight: 41, marginTop: 10 },
     playerSubtitle: {
-        color: '#b8c0ca',
-        fontFamily: fonts.body,
-        fontSize: 19,
-        lineHeight: 26,
-        marginTop: 10,
-    },
-    playerFooter: {
-        position: 'absolute',
-        bottom: 27,
-        left: 64,
-        right: 64,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 24,
-        borderTopColor: colors.borderStrong,
-        borderTopWidth: 1,
-        paddingTop: 12,
-    },
-    playerStatus: {
         color: colors.muted,
-        fontFamily: fonts.body,
-        fontSize: 13,
-        flex: 1,
+        fontFamily: fonts.mono,
+        fontSize: 16,
+        lineHeight: 22,
+        marginTop: 8,
     },
     seek: {
         borderRadius: 12,
         marginHorizontal: -12,
-        marginTop: 12,
+        marginTop: 18,
+        paddingBottom: 8,
         paddingHorizontal: 12,
-        paddingVertical: 12,
+        paddingTop: 14,
     },
-    seekFocused: { backgroundColor: QUIET_FILL, outlineColor: colors.accentLine, outlineWidth: 2 },
-    seekBody: { width: '100%' },
     seekTrack: {
-        backgroundColor: 'rgba(255, 255, 255, 0.18)',
+        backgroundColor: 'rgba(255, 255, 255, 0.16)',
         borderRadius: 3,
         height: 6,
         overflow: 'hidden',
     },
-    seekFill: { backgroundColor: colors.text, height: 6 },
-    seekTimes: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+    seekFill: { backgroundColor: colors.accentBright, height: 6 },
+    seekTimes: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 9 },
     seekTime: { color: colors.muted, fontFamily: fonts.mono, fontSize: 13 },
     seekTimeScrubbing: { color: colors.text },
-    seekHint: { color: colors.muted, fontFamily: fonts.body, fontSize: 13 },
+    seekHint: { color: colors.faint, fontFamily: fonts.body, fontSize: 13 },
     transport: {
         alignItems: 'center',
-        justifyContent: 'center',
         flexDirection: 'row',
         gap: 18,
-        marginTop: 14,
+        justifyContent: 'center',
+        marginTop: 10,
     },
+    /** Play alone, resuming what played last: it starts where the title
+     *  does, as the Home hero's action does, rather than centred under a seek
+     *  bar that is not there. */
+    transportResting: { justifyContent: 'flex-start', marginTop: 18 },
     transportButton: {
         alignItems: 'center',
-        backgroundColor: 'transparent',
         borderRadius: 24,
         height: 48,
         justifyContent: 'center',
         width: 48,
     },
     transportPrimary: {
-        backgroundColor: colors.text,
-        borderRadius: 34,
-        height: 68,
-        width: 68,
+        backgroundColor: colors.accentBright,
+        borderRadius: 32,
+        height: 64,
+        width: 64,
     },
-    transportFocused: {
-        backgroundColor: FOCUS_FILL,
-        outlineColor: FOCUS_FILL,
-        outlineWidth: 2,
-        outlineOffset: 3,
-    },
-    transportPrimaryFocused: {
-        outlineColor: colors.accentBright,
-        outlineWidth: 2,
-        outlineOffset: 5,
-    },
-    transportSecondary: { flexDirection: 'row', justifyContent: 'center', gap: 20 },
+    /** Shuffle or repeat, on. */
     transportDot: {
-        position: 'absolute',
-        bottom: 5,
-        width: 4,
-        height: 4,
+        backgroundColor: colors.accentBright,
         borderRadius: 2,
-        backgroundColor: colors.text,
+        bottom: 5,
+        height: 4,
+        position: 'absolute',
+        width: 4,
     },
-    transportDotFocused: { backgroundColor: colors.background },
+    playerFooter: {
+        alignItems: 'center',
+        bottom: TV_SAFE_Y,
+        flexDirection: 'row',
+        gap: 24,
+        left: 64,
+        position: 'absolute',
+        right: 64,
+    },
+    playerStatus: { color: colors.muted, flex: 1, fontFamily: fonts.body, fontSize: 14 },
+    playerFooterActions: { flexDirection: 'row', gap: 10 },
+    footerButton: { height: 38, paddingHorizontal: 18 },
+    playerEmpty: { alignItems: 'center', flex: 1, gap: 10, justifyContent: 'center' },
+    playerEmptyButton: { marginTop: 16 },
     queuePanel: {
-        backgroundColor: 'rgba(14, 15, 19, 0.6)',
-        borderRadius: radii.lg,
-        paddingHorizontal: 14,
+        backgroundColor: colors.panel,
+        borderRadius: 16,
+        height: 356,
+        paddingHorizontal: 10,
         paddingVertical: 16,
-        width: 304,
-        height: 340,
+        width: 316,
     },
-    queueTitle: { marginBottom: 8, paddingHorizontal: 8 },
+    queueTitle: { marginBottom: 8, paddingHorizontal: 10 },
     queueRow: {
         alignItems: 'center',
         borderRadius: 10,
         flexDirection: 'row',
         gap: 12,
         height: TV_QUEUE_ROW_HEIGHT,
-        paddingHorizontal: 8,
+        paddingHorizontal: 10,
     },
-    queueArt: { backgroundColor: colors.surface, borderRadius: 3, height: 40, width: 40 },
 
-    // ── Menu (long press) ────────────────────────────────────────────────
+    // ── Menu (long press) and panels ─────────────────────────────────────
     menuBackdrop: {
         ...StyleSheet.absoluteFill,
-        backgroundColor: 'rgba(8, 9, 12, 0.66)',
+        backgroundColor: 'rgba(8, 9, 12, 0.7)',
         zIndex: 60,
     },
     menuPanel: {
-        backgroundColor: colors.surface,
+        backgroundColor: colors.panel,
         bottom: 0,
-        paddingHorizontal: 26,
-        paddingVertical: 34,
+        paddingBottom: TV_SAFE_Y,
+        paddingHorizontal: 22,
+        paddingTop: TV_SAFE_Y + 6,
         position: 'absolute',
         right: 0,
         top: 0,
-        width: 390,
+        width: 384,
     },
-    menuHeader: { alignItems: 'center', flexDirection: 'row', gap: 16, marginBottom: 20 },
-    menuArt: { backgroundColor: colors.panel, borderRadius: 3, height: 64, width: 64 },
-    menuCopy: { flex: 1, gap: 3 },
-    menuTitle: { color: colors.text, fontFamily: fonts.heading, fontSize: 20, lineHeight: 24 },
-    menuSubtitle: { color: colors.muted, fontFamily: fonts.mono, fontSize: 12.5 },
+    menuHeader: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 14,
+        marginBottom: 18,
+        paddingHorizontal: 10,
+    },
+    menuArt: { backgroundColor: colors.surface, borderRadius: 6, height: 60, width: 60 },
+    menuCopy: { flex: 1, minWidth: 0 },
+    menuTitle: { color: colors.text, fontFamily: fonts.heading, fontSize: 19, lineHeight: 24 },
+    menuSubtitle: {
+        color: colors.muted,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+        lineHeight: 16,
+        marginTop: 3,
+    },
+    /** Room for a focused row's ring, which the list would otherwise clip. */
+    menuList: { paddingHorizontal: 4, paddingVertical: 4 },
     menuItem: {
         alignItems: 'center',
-        borderRadius: 12,
+        borderRadius: 10,
         flexDirection: 'row',
-        gap: 16,
-        minHeight: 50,
-        paddingHorizontal: 16,
+        height: 48,
+        paddingHorizontal: 14,
     },
-    menuItemFocused: { backgroundColor: FOCUS_FILL },
     menuLabel: { color: colors.text, flexShrink: 1, fontFamily: fonts.body, fontSize: 17 },
     menuLabelDestructive: { color: '#ff7a6e' },
     menuFeedback: {
         color: colors.accentBright,
         fontFamily: fonts.body,
         fontSize: 15,
-        marginTop: 16,
-        paddingHorizontal: 16,
+        marginTop: 14,
+        paddingHorizontal: 14,
     },
+    panelTitle: { marginBottom: 6, marginTop: 6, paddingHorizontal: 10 },
+    panelStatus: { marginBottom: 14, paddingHorizontal: 10 },
+    panelClose: { alignSelf: 'flex-start', marginLeft: 10, marginTop: 14 },
 
     // ── Settings ─────────────────────────────────────────────────────────
     settingsPanel: {
         alignSelf: 'flex-start',
         backgroundColor: colors.panel,
-        borderRadius: 14,
-        gap: 6,
-        minWidth: 420,
+        borderRadius: 16,
+        marginTop: 8,
+        minWidth: 440,
         padding: 24,
     },
-    settingsDetail: { color: colors.muted, fontFamily: fonts.body, fontSize: 15, marginBottom: 12 },
+    settingsServer: {
+        color: colors.text,
+        fontFamily: fonts.heading,
+        fontSize: 22,
+        lineHeight: 28,
+        marginTop: 6,
+    },
+    settingsDetail: { marginBottom: 18, marginTop: 4 },
+
+    // ── Sign in ──────────────────────────────────────────────────────────
+    setupFrame: { flex: 1, paddingHorizontal: 64, paddingVertical: TV_SAFE_Y },
+    // Sign-in is laid out across the screen, not down it: stacked, the brand
+    // alone took a third of the height and pushed the code screen's buttons to
+    // the bottom edge.
+    setup: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 56 },
+    setupIntro: { width: 250 },
+    setupLogo: { height: 44, marginBottom: 14, width: 44 },
+    brand: { ...display, fontSize: 40, lineHeight: 46 },
+    // Room past the panel's edges for a focused control's ring, which a
+    // scroll view would otherwise clip.
+    setupPanel: { alignSelf: 'stretch', flex: 1, marginHorizontal: -12 },
+    setupContent: {
+        flexGrow: 1,
+        gap: 16,
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+    },
+    setupTitle: { ...display, fontSize: 26, lineHeight: 32 },
+    serverButton: {
+        height: 64,
+        justifyContent: 'space-between',
+        paddingHorizontal: 22,
+    },
+    pairing: { alignItems: 'center', flexDirection: 'row', gap: 28 },
+    pairingCopy: { flex: 1, gap: 8 },
+    pairingCode: {
+        color: colors.text,
+        fontFamily: fonts.monoBold,
+        fontSize: 38,
+        letterSpacing: 5,
+        lineHeight: 46,
+    },
+    pairingUrl: { color: colors.text, fontFamily: fonts.mono },
 
     // ── Toast ────────────────────────────────────────────────────────────
     toast: {
         alignSelf: 'center',
         backgroundColor: colors.surfaceHigh,
-        borderRadius: radii.pill,
+        borderRadius: 22,
         bottom: 34,
         paddingHorizontal: 24,
         paddingVertical: 12,
@@ -687,96 +698,43 @@ export const tvStyles = StyleSheet.create({
     toastText: { color: colors.text, fontFamily: fonts.body, fontSize: 16 },
 
     // ── Radio ────────────────────────────────────────────────────────────
-    radioPageHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 20,
-        marginBottom: 20,
-    },
-    radioSectionLabel: {
-        color: colors.muted,
-        fontFamily: fonts.body,
-        fontSize: 14,
-        marginBottom: 12,
-    },
     radioCard: {
-        backgroundColor: '#191d24',
-        borderColor: colors.borderStrong,
-        borderRadius: 14,
-        borderWidth: 1,
+        backgroundColor: colors.panel,
+        borderRadius: 16,
         marginBottom: 28,
-        padding: 24,
+        padding: 22,
     },
-    radioDeviceHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 24,
-        marginBottom: 24,
-    },
-    radioDeviceLabel: { color: colors.muted, fontFamily: fonts.headingMedium, fontSize: 15 },
-    radioHead: { alignItems: 'center', flexDirection: 'row', gap: 30 },
+    radioHead: { alignItems: 'center', flexDirection: 'row', gap: 26 },
+    radioSleeve: { backgroundColor: colors.surface, borderRadius: 10, height: 148, width: 148 },
     radioCopy: { flex: 1, minWidth: 0 },
-    radioTitle: {
-        color: colors.text,
-        fontFamily: fonts.heading,
-        fontSize: 32,
-        letterSpacing: -0.7,
-        lineHeight: 38,
-    },
-    radioMeta: {
-        color: '#b8c0ca',
-        fontFamily: fonts.body,
-        fontSize: 16,
-        lineHeight: 23,
-        marginTop: 8,
-    },
-    radioStatus: { color: colors.muted, fontFamily: fonts.body, fontSize: 13, marginTop: 12 },
-    radioSleeve: { backgroundColor: colors.surface, borderRadius: 6, height: 156, width: 156 },
+    radioDevice: { flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
+    radioTitle: { ...display, fontSize: 30, lineHeight: 35, marginTop: 8 },
+    radioMeta: { color: colors.muted, fontFamily: fonts.mono, fontSize: 14, marginTop: 6 },
+    radioStatus: { marginTop: 10 },
     radioControls: {
         alignItems: 'center',
         flexDirection: 'row',
-        gap: 20,
-        marginTop: 24,
-        paddingTop: 20,
-        borderTopWidth: 1,
-        borderTopColor: colors.borderStrong,
+        gap: 22,
+        marginTop: 20,
     },
-    radioTransport: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    radioActions: { flexDirection: 'row', gap: 2, marginLeft: 'auto' },
-    radioVolumeGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    volumeStep: { backgroundColor: 'transparent', minHeight: 38, width: 36, paddingHorizontal: 0 },
-    volumeStepText: { color: colors.text, fontFamily: fonts.body, fontSize: 22 },
-    radioVolumeReadout: { width: 48, alignItems: 'center', gap: 7 },
+    radioTransport: { alignItems: 'center', flexDirection: 'row', gap: 10 },
+    radioVolumeGroup: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+    radioVolumeReadout: { alignItems: 'center', gap: 7, width: 52 },
     radioVolumeTrack: {
-        backgroundColor: colors.surfaceHigh,
+        backgroundColor: 'rgba(255, 255, 255, 0.14)',
         borderRadius: 2,
         height: 3,
-        width: '100%',
         overflow: 'hidden',
+        width: '100%',
     },
     radioVolumeFill: { backgroundColor: colors.accent, height: 3 },
-    radioVolumeLabel: { color: colors.muted, fontFamily: fonts.mono, fontSize: 12 },
-    radioPanelTitle: { marginTop: 8, marginBottom: 24 },
-    radioPanelStatus: {
-        color: colors.muted,
-        fontFamily: fonts.body,
-        fontSize: 14,
-        marginBottom: 18,
-    },
-    radioPanelClose: { marginTop: 18 },
-    radioNotice: {
-        backgroundColor: colors.panel,
-        borderRadius: 14,
-        gap: 8,
-        marginBottom: 24,
-        padding: 28,
-    },
+    volumeStepText: { color: colors.text, fontFamily: fonts.body, fontSize: 22, lineHeight: 26 },
+    radioActions: { flexDirection: 'row', gap: 10, marginLeft: 'auto' },
     radioFeedback: {
         color: colors.accentBright,
         fontFamily: fonts.body,
         fontSize: 15,
         marginTop: 12,
     },
+    radioSectionLabel: { marginBottom: 12 },
 });

@@ -85,6 +85,10 @@ export const PlaybackEngine = memo(function PlaybackEngine() {
     // active item, keep artwork + resume position fresh.
     // ------------------------------------------------------------------
     const lastPlayedPersistenceKeyRef = useRef<null | string>(null);
+    // Builds before the native store kept arrays saved an audiobook without
+    // its chapters. Restored, that copy played as a one-chapter book, and an
+    // active item with the same key never replaced it.
+    const lastPlayedHasChaptersRef = useRef(false);
 
     useEffect(() => {
         let isMounted = true;
@@ -98,6 +102,7 @@ export const PlaybackEngine = memo(function PlaybackEngine() {
                     ? await refreshPlayableResumeFromServer(item, serverConnection)
                     : item;
             lastPlayedPersistenceKeyRef.current = getLastPlayedPersistenceKey(refreshed);
+            lastPlayedHasChaptersRef.current = Boolean(refreshed.timelineSegments?.length);
             setLastPlayedItem(refreshed);
             const resumeSeconds = Math.max(
                 refreshed.progressOffsetSeconds ?? 0,
@@ -123,11 +128,16 @@ export const PlaybackEngine = memo(function PlaybackEngine() {
         }
         const item = activePlaybackItem;
         const persistenceKey = getLastPlayedPersistenceKey(item);
-        if (lastPlayedPersistenceKeyRef.current === persistenceKey) {
+        const hasChapters = Boolean(item.timelineSegments?.length);
+        if (
+            lastPlayedPersistenceKeyRef.current === persistenceKey &&
+            (lastPlayedHasChaptersRef.current || !hasChapters)
+        ) {
             setLastPlayedItem((current) => current ?? item);
             return;
         }
         lastPlayedPersistenceKeyRef.current = persistenceKey;
+        lastPlayedHasChaptersRef.current = hasChapters;
         setLastPlayedItem(item);
         void savePersistedLastPlayedItem(item);
     }, [activePlaybackItem]);

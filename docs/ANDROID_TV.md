@@ -44,7 +44,9 @@ The TV screens include:
   its own idle timers (`tv/tv-screen-awake.ts`, `SamoScreenAwake.kt`).
 - Radio stations and samo-radio device controls: pause/resume, skip, volume,
   tuning, return to station, standby, and keeping an eligible airing track.
-- A compact glyph rail and the samo S in the top-right corner.
+- A glyph rail: the samo mark, the destinations, the cover of what is playing
+  (Now Playing, with a dot while it plays) and Settings. The page shown is lit;
+  focus names its destination in a label beside the rail.
 - Disconnecting a server.
 
 ## Signing in
@@ -84,8 +86,8 @@ without also clicking the item. Native key-repeat timing handles Android's hold
 threshold, with a timer fallback for remotes that do not repeat. Text inputs,
 the IME, and media-session keys retain native handling; a text field's arrows
 are still reported, so leaving it counts as the person's move. Every
-button and field has a visible focus border and accessibility label. The
-covered browse surface stays mounted but hidden, retaining scroll position and
+control has an accessibility label and draws its own focus (see "Drawing focus
+and moving the page"). The covered browse surface stays mounted but hidden, retaining scroll position and
 filter and focus state. Back closes the menu, player, detail, or View All in
 that order. From content it moves to the rail; from the rail it returns Home,
 then lets Android background the task. The system keyboard
@@ -105,9 +107,13 @@ Home starts on the hero's action, else the first cover.
 The rail and the content are each a `SamoTvFocusZone`, a native view that
 D-pad focus leaves only through the invisible guide on the seam between them;
 Up and Down never leave either side. The guide hands focus on to the content's
-remembered control or the rail's current page.
+remembered control or the rail's current page. Inside a zone a sideways move
+keeps to its line, so Left from a button beside a cover goes to the rail rather
+than to a cover in the row below, and Up or Down stays in its list while the
+list has somewhere to go. The player and the menus are outside both zones and
+use Android's own search.
 
-Five things make all of that harder than it looks, and each has already cost a
+Eight things make all of that harder than it looks, and each has already cost a
 bug:
 
 - **`hasTVPreferredFocus` is sticky under Fabric.** `setNativeProps` values are
@@ -134,6 +140,51 @@ bug:
   while Android clears it away from them; recording that would send Back to
   wherever Android happened to put it. The scope learns it is covered in a
   layout effect, before those events can arrive.
+- **A React Native scroll view answers a focus search on its way up.** When the
+  zone's choice lies outside the list, the list substitutes its own nearest
+  control by geometry alone. `SamoTvFocusable` therefore asks its zone
+  directly, without going through its parents.
+- **A React Native list scrolls itself by jumps.** `ScrollView.arrowScroll` and
+  its scroll-to-child moved the list in one frame on every press. The TV's
+  lists no longer take the D-pad (`TV_LIST_PROPS`); each control reveals
+  itself instead.
+- **Rows a list has scrolled away keep their places** just off its edge, behind
+  whatever is fixed there. Up from a row on Home found the filter pills, which
+  looked nearer than the rows scrolled up under them, so an Up or Down move
+  searches its list before the zone.
+
+### Drawing focus and moving the page
+
+Every control is a `SamoTvFocusable` (`TvFocusable.ts`; `TvPressable` and
+`TvButton` in `TvControls.tsx`), a native view that draws its own focus on the
+UI thread. The ring is silver and set off by a hair. Covers and buttons also
+lift; rows fill instead and stay put. The looks are `tvFocus` in
+`tv-styles.ts`. When focus moves, React re-renders only the rail's label and
+the seek bar's hint. A control can keep a direction for itself with `pin`, as
+the seek bar keeps Left and Right for scrubbing.
+
+The ring is drawn outside the control. So a shelf reaches out under the rail,
+pads its covers by `TV_ROW_BLEED` above and below, and starts them at the
+keyline. A list edge that cuts into that margin cuts the ring, which is how a
+focused cover once lost its left side at the row boundary.
+
+Focus moves and the page follows. A control that gains focus smoothly scrolls
+each list it is in to its anchor:
+
+- Covers glide to the keyline (`anchorX` = `TV_GUTTER`), where the shelf's
+  title starts, and the covers before it slide out under the rail.
+- A shelf brings its covers to `TV_SHELF_ANCHOR_Y`, which puts its title at
+  the top of the safe area, or to `TV_HOME_SHELF_ANCHOR_Y` beneath Home's
+  filters. Grid rows use `TV_GRID_ANCHOR_Y`. A page's first row anchors to
+  `TV_ANCHOR_TOP`, bringing the header back with it.
+- A control without an anchor scrolls only as far as its `scrollMargin`
+  needs.
+- `TvTopFade` covers only the overscan (`TV_SAFE_Y`), above where a focused
+  row's title sits.
+
+Entering a shelf from above or below lands on the cover at the keyline
+(`TvFocusGroup`'s `entryInset`), not on whichever cover is level with the
+control that focus left.
 
 Large grids and track lists virtualize rows without detaching clipped views, so
 native D-pad focus can reach the next row before scrolling. Track selection
@@ -201,12 +252,17 @@ Manifest requirements follow the [Android TV setup guide](https://developer.andr
 
 ## TV visual design and resource budget
 
-The player gives artwork and metadata their own columns, with shuffle, previous,
-play/pause, next, and repeat on one transport row. Up Next and More Options live
-in a separate footer so longer titles and enlarged system text do not compete
-with secondary controls. Focus uses a light fill or an outline; shuffle and repeat
-also carry a persistent selected dot. The seek bar alone subscribes to playback
-position updates.
+The TV uses the app's typefaces: Bricolage for headings, Archivo for text, and
+Office Code Pro for metadata. Its surfaces are the page's own dark, so the
+covers supply the colour.
+
+The player gives artwork and metadata their own columns. Shuffle, previous,
+play/pause, next, and repeat sit centred under the seek bar. Until something
+loads in a launch, the player shows what played last, with Play alone under
+the title to resume it. Up Next swaps the artwork for the queue. Up Next and
+More Options sit in a separate footer, so longer titles and enlarged system
+text do not compete with secondary controls. Shuffle and repeat show a dot
+while on. Only the seek bar subscribes to playback position updates.
 
 Radio separates playback on this TV from control of a connected stereo. Device
 cards group transport, volume, and the Stations/Options entry points in one strip.
@@ -218,19 +274,41 @@ restores the page's remembered control. Errors and keep-in-library feedback rema
 visible in the panel.
 
 Home, detail, and player presentations do not decode a second enlarged, blurred
-cover as a backdrop. They use solid surfaces or a static native gradient; covers
-retain the shared image component's RGB decoding and cache behavior. There are
-no new dependencies, continuously animated backgrounds, blur passes, or polling
-intervals. Station menus, the queue, grids, and track lists remain virtualized.
-Home shelves retain their existing bounded previews and focus animation.
+cover as a backdrop. They use solid surfaces or a static native gradient, and
+covers keep the shared image component's RGB decoding. There are no
+continuously animated backgrounds, blur passes, or polling intervals. Station
+menus, the queue, grids, and track lists remain virtualized, and Home's shelves
+remain bounded previews.
 
-Home virtualizes both its vertical shelves and their horizontal covers. It
-mounts two shelves and six covers per shelf initially, then fills nearby content
-in small batches as you scroll. There is no idle callback that mounts the entire
-page after the first paint. Clipped views remain attached for native D-pad
-navigation. The first mirror paint also establishes Home's account identity, so
-the later saved-session validation refresh keeps that page mounted; switching
-accounts still clears it, and late reads cannot restore the previous account.
+Covers are fetched at their size. `ArtworkImage`'s `width` asks samo-server for
+the rung of its resize ladder (64 to 1024 px) that covers the slot at the
+screen's density (`utils/artwork-size.ts`). On a 1080p TV a 144dp cover asks
+for 384px, where originals run to 3000px. The managed cover cache is warmed
+with the whole library after a sync. On TV it stores that same 384px rendition
+(`COVER_CACHE_WIDTH`) and records the width in its index (`coverWidth`). A
+cache filled at another width is dropped once and refilled by the next sync.
+Phones keep caching originals, because `COVER_CACHE_WIDTH` is unset there.
+
+Frame costs, measured on an emulator with a debug build (the onn box is
+slower):
+
+- Mounting one cover costs about 4 to 5 ms: its text, its image view and first
+  decode, and its focusable. So shelves mount six covers and then one per batch
+  (`maxToRenderPerBatch={1}`), and grids one row of five per batch.
+- Home mounts two shelves, then the rest one per batch once it has drawn
+  (`windowSize={21}` spans every shelf). When a shelf mounted only as it
+  scrolled into view, its title and six covers landed in the same frame as a
+  move down's glide: 28 ms.
+- While a list glides, React Native syncs its scroll position into Fabric's
+  state every frame. That sync cannot be throttled without patching React
+  Native. The JS scroll events can be, and are, to 100 ms
+  (`scrollEventThrottle`): the native view animates the glide, and React needs
+  positions only for windowing.
+
+Clipped views remain attached for native D-pad navigation. The first mirror
+paint also establishes Home's account identity, so the later saved-session
+validation refresh keeps that page mounted; switching accounts still clears it,
+and late reads cannot restore the previous account.
 
 When checking visual changes on an onn box, also test its enlarged system text
 setting (130%), long track titles, the bottom overscan margin, and a station menu

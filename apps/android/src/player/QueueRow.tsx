@@ -57,6 +57,7 @@ export const QueueRowInner = ({
                     serverConnection={serverConnection}
                     style={styles.queueRowThumb}
                     uri={item.artworkUrl}
+                    width={styles.queueRowThumb.width}
                 />
                 <QualityBadge thumb profile={profile} />
             </View>

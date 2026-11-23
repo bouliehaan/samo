@@ -13,5 +13,5 @@ class SamoTvPackage : ReactPackage {
 
   override fun createViewManagers(
     reactContext: ReactApplicationContext
-  ): List<ViewManager<*, *>> = listOf(SamoTvFocusZoneManager(), SamoTvFocusGroupManager())
+  ): List<ViewManager<*, *>> = listOf(SamoTvFocusZoneManager(), SamoTvFocusGroupManager(), SamoTvFocusableManager())
 }

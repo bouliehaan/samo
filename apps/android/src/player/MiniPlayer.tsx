@@ -170,6 +170,7 @@ export const MiniPlayer = memo(({
                                     style={styles.miniPlayerArtwork}
                                     transition={200}
                                     uri={artworkUrl}
+                                    width={styles.miniPlayerArtwork.width}
                                 />
                             ) : (
                                 <View style={styles.miniPlayerArtworkFallback}>

@@ -7,7 +7,7 @@ import { getPlaybackBridge } from '../state/playback-bridge';
 import { setIsFullPlayerOpen } from '../state/app-navigation';
 import { playOnTv, runTvAction, selectTvItem } from './tv-actions';
 import { TvFocusScope, TvPressable } from './TvControls';
-import { tvStyles as s } from './tv-styles';
+import { TV_LIST_PROPS, tvFocus, tvStyles as s } from './tv-styles';
 
 type TvMenuAction = { destructive?: boolean; id: string; label: string; onPress: () => void };
 
@@ -80,6 +80,7 @@ export function TvContextMenu() {
                             contentSource={menu.contentSource}
                             letter={menu.title.slice(0, 1)}
                             style={s.menuArt}
+                            width={s.menuArt.width}
                         />
                         <View style={s.menuCopy}>
                             <Text numberOfLines={2} style={s.menuTitle}>
@@ -90,12 +91,13 @@ export function TvContextMenu() {
                             </Text>
                         </View>
                     </View>
-                    <ScrollView showsVerticalScrollIndicator={false}>
+                    <ScrollView contentContainerStyle={s.menuList} {...TV_LIST_PROPS}>
                         {actions.map((action, index) => (
                             <TvPressable
                                 key={action.id}
                                 id={`menu:${action.id}`}
                                 label={action.label}
+                                look={tvFocus.row}
                                 onPress={action.onPress}
                                 pin={{
                                     left: true,
@@ -104,19 +106,15 @@ export function TvContextMenu() {
                                     down: index === actions.length - 1,
                                 }}
                                 style={s.menuItem}
-                                focusedStyle={s.menuItemFocused}
                             >
-                                {(focused) => (
-                                    <Text
-                                        style={[
-                                            s.menuLabel,
-                                            action.destructive && s.menuLabelDestructive,
-                                            focused && s.trackInkFocused,
-                                        ]}
-                                    >
-                                        {action.label}
-                                    </Text>
-                                )}
+                                <Text
+                                    style={[
+                                        s.menuLabel,
+                                        action.destructive && s.menuLabelDestructive,
+                                    ]}
+                                >
+                                    {action.label}
+                                </Text>
                             </TvPressable>
                         ))}
                     </ScrollView>

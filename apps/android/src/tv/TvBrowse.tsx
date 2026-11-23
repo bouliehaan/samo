@@ -15,10 +15,12 @@ import { useAppNavigationSelector } from '../state/app-navigation';
 import { useAuthSessionSelector } from '../state/auth-session';
 import { type HomeDisplaySection } from '../types/home';
 import { runTvAction, tvPageScope } from './tv-actions';
-import { getTvGridFocusId, TvGrid, TvShelf } from './TvCollections';
+import { getTvGridFocusId, TvGrid, TvShelf, TvTopFade } from './TvCollections';
 import { TvFocusScope, TvTextInput } from './TvControls';
 import { didTvFocusArriveUp } from './tv-focus';
-import { TV_SCROLL_EDGE, tvStyles as s } from './tv-styles';
+import { TV_LIST_PROPS, tvStyles as s } from './tv-styles';
+
+const SEARCH_RESULTS = { marginTop: 22 } as const;
 
 export type TvMediaItem = MobileHomeItem | MobileSearchItem;
 export type TvRunAction = (action: () => void | Promise<unknown>) => void;
@@ -81,7 +83,7 @@ export function TvCollectionPage({
                                   : 'Playlists'}
                         </Text>
                         {items.length ? (
-                            <Text style={s.muted}>{items.length} in your library</Text>
+                            <Text style={s.meta}>{items.length} in your library</Text>
                         ) : null}
                     </View>
                 }
@@ -114,11 +116,15 @@ export function TvSearch({ active }: { active: boolean }) {
         <TvFocusScope active={active} defaultFocus="search-query" name={tvPageScope('search')}>
             <ScrollView
                 contentContainerStyle={s.pageScroll}
-                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
                 keyboardShouldPersistTaps="handled"
                 ref={scroll}
+                // Results bring themselves into view; the field, which is not
+                // one of the TV's own controls, is `revealTop`'s.
+                {...TV_LIST_PROPS}
             >
-                <Text style={s.pageTitle}>Search</Text>
+                <View style={s.pageHeader}>
+                    <Text style={s.pageTitle}>Search</Text>
+                </View>
                 <TvTextInput
                     id="search-query"
                     label="Search your library"
@@ -129,13 +135,13 @@ export function TvSearch({ active }: { active: boolean }) {
                     returnKeyType="search"
                     onSubmitEditing={() => runTvAction(() => handleSearch(query))}
                 />
-                <View style={s.searchResults}>
+                <View style={SEARCH_RESULTS}>
                     {state.status === 'loading' ? (
                         <Text style={s.emptyText}>Searching…</Text>
                     ) : null}
                     {state.status === 'error' ? <Text style={s.error}>{state.message}</Text> : null}
                     {state.status === 'loaded' && state.results.sections.length === 0 ? (
-                        <View style={s.searchEmpty}>
+                        <View style={s.empty}>
                             <Text style={s.emptyTitle}>No matches</Text>
                             <Text style={s.emptyText}>
                                 Nothing in your library matches “{state.query}”. Try another title,
@@ -158,6 +164,7 @@ export function TvSearch({ active }: { active: boolean }) {
                         : null}
                 </View>
             </ScrollView>
+            <TvTopFade />
         </TvFocusScope>
     );
 }
@@ -181,7 +188,7 @@ export function TvViewAll({ active }: { active: boolean }) {
                 header={
                     <View style={s.pageHeader}>
                         <Text style={s.pageTitle}>{route.title}</Text>
-                        <Text style={s.muted}>
+                        <Text style={s.meta}>
                             {state.status === 'error' ? state.message : `${items.length} items`}
                         </Text>
                     </View>

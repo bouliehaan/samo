@@ -155,6 +155,7 @@ export const MediaDetailLoadingView = ({
                                     style={[styles.detailArtwork, styles.detailArtworkRound]}
                                     serverConnection={serverConnection}
                                     uri={artworkUrl}
+                                    width={styles.detailArtwork.width}
                                 />
                                 <View style={styles.detailHeroText}>
                                     <Text style={styles.detailTitle}>{title}</Text>
@@ -172,6 +173,7 @@ export const MediaDetailLoadingView = ({
                                         serverConnection={serverConnection}
                                         style={styles.albumHeroArtwork}
                                         uri={artworkUrl}
+                                        width={styles.albumHeroArtwork.width}
                                     />
                                 </View>
                                 {/* Reserve the exact hero chrome the loaded view

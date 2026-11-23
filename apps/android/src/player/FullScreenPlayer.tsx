@@ -733,6 +733,7 @@ export const FullScreenPlayer = memo(({
                                 serverConnection={serverConnection}
                                 style={styles.fullPlayerArtistAvatar}
                                 uri={artistItem.artworkUrl}
+                                width={styles.fullPlayerArtistAvatar.width}
                             />
                         ) : (
                             // Fallback while loading or no artwork — show initial.

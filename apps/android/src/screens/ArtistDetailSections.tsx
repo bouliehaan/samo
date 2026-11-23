@@ -93,7 +93,7 @@ import {
 } from '../services/recent-content';
 import { triggerImpact, triggerSelection } from '../services/haptics';
 import { formatQualityProfile } from '../services/quality-badge-assets';
-import { SCREEN_HEIGHT } from '../theme/layout';
+import { HOME_EDGE_PADDING, SCREEN_HEIGHT, SCREEN_WIDTH } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors, spacing } from '../theme/tokens';
 import { getContentItemKey } from '../utils/content-item';
@@ -196,6 +196,7 @@ export const ArtistDetailSections = ({
                                             letter={track.title.slice(0, 1).toUpperCase()}
                                             serverConnection={serverConnection}
                                             style={styles.trackArtwork}
+                                            width={styles.trackArtwork.width}
                                             uri={
                                                 track.artworkUrl ??
                                                 detail.artworkUrl ??
@@ -291,6 +292,7 @@ export const ArtistDetailSections = ({
                                     serverConnection={serverConnection}
                                     style={styles.relatedArtistArtwork}
                                     uri={item.artworkUrl}
+                                    width={styles.relatedArtistArtwork.width}
                                 />
                                 <Text numberOfLines={2} style={styles.relatedArtistTitle}>
                                     {item.title}
@@ -303,6 +305,9 @@ export const ArtistDetailSections = ({
         </>
     );
 };
+
+/** `styles.artistAlbumGridItem`'s 30% of the detail page's padded width. */
+const ARTIST_ALBUM_TILE_WIDTH = (SCREEN_WIDTH - HOME_EDGE_PADDING * 2) * 0.3;
 
 export const ArtistAlbumTile = ({
     item,
@@ -330,6 +335,7 @@ export const ArtistAlbumTile = ({
                 serverConnection={serverConnection}
                 style={styles.artistAlbumGridArtwork}
                 uri={item.artworkUrl}
+                width={ARTIST_ALBUM_TILE_WIDTH}
             />
             <View style={styles.tileMetaRow}>
                 <View style={styles.tileMetaTextCol}>

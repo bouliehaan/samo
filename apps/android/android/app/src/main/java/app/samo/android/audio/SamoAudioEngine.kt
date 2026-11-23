@@ -971,17 +971,19 @@ internal class SamoAudioEngine(
 
   /**
    * Latest locally-cached resume position for an item, used by JS as a fallback
-   * when the live server progress read fails on a flaky LAN. Resolves a map
-   * `{ progressSeconds, completed }` or null when nothing is cached.
+   * when the live server progress read fails on a flaky LAN, and in place of
+   * the server's when it is newer. Resolves a map
+   * `{ progressSeconds, completed, updatedAtMs }` or null when nothing is cached.
    */
   fun getResumeProgress(kind: String, targetId: String, promise: Promise) {
-    SamoProgressSync.getResumeSeconds(kind, targetId) { seconds, completed ->
-      if (seconds == null) {
+    SamoProgressSync.getResumeEntry(kind, targetId) { entry ->
+      if (entry == null) {
         promise.resolve(null)
       } else {
         val map = Arguments.createMap()
-        map.putDouble("progressSeconds", seconds.toDouble())
-        map.putBoolean("completed", completed)
+        map.putDouble("progressSeconds", entry.progressSeconds.toDouble())
+        map.putBoolean("completed", entry.completed == true)
+        map.putDouble("updatedAtMs", entry.updatedAtMs.toDouble())
         promise.resolve(map)
       }
     }

@@ -1,7 +1,7 @@
 import { getItemQualityProfile, MobileHomeItemType } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { memo, useMemo } from 'react';
-import { Text, View } from 'react-native';
+import { type ImageStyle, StyleSheet, Text, View } from 'react-native';
 
 import { ArtworkImage } from '../../components/ArtworkImage';
 import { DownloadIndicator } from '../../components/DownloadIndicator';
@@ -10,6 +10,7 @@ import { QualityBadge } from '../../components/QualityBadge';
 import { useMediaContextMenu } from '../../contexts/media-context-menu';
 import { useDownloadIndicator } from '../../hooks/use-download-indicator';
 import { type AndroidRecentContentSourceItem } from '../../services/recent-content';
+import { HOME_PRIMARY_TILE } from '../../theme/layout';
 import { presses } from '../../theme/motion';
 import { styles } from '../../theme/styles';
 import { type HomeDisplaySection } from '../../types/home';
@@ -97,6 +98,12 @@ export const HomeMediaTile = memo(({
         ],
         [isAlbum, isArtist, isArtistItem, isBook, isPlaylist, isPodcast, isRadio, isRadioSection, isRecent, isWide],
     );
+    // Read off the style the cover is drawn with, so the size it is fetched at
+    // cannot drift from the size it is drawn at.
+    const artworkWidth = useMemo(() => {
+        const { width } = StyleSheet.flatten<ImageStyle>(artworkStyle);
+        return typeof width === 'number' ? width : HOME_PRIMARY_TILE;
+    }, [artworkStyle]);
     const fallbackStyle = useMemo(
         () => [
             styles.mediaArtworkFallback,
@@ -131,6 +138,7 @@ export const HomeMediaTile = memo(({
                 serverConnection={serverConnection}
                 style={artworkStyle}
                 uri={item.artworkUrl}
+                width={artworkWidth}
             />
             <View style={[styles.tileMetaRow, isWide && styles.tileMetaRowFill]}>
                 <View

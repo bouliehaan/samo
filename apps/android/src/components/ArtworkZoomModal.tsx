@@ -205,6 +205,8 @@ export const ArtworkZoomModal = memo(({
                             source={resolvedSource}
                             style={styles.artworkZoomImage}
                             uri={uri}
+                            // As large as a pinch draws it: the cover as stored.
+                            width={styles.artworkZoomImageFrame.width * ARTWORK_ZOOM_MAX_SCALE}
                         />
                     </Reanimated.View>
                 </GestureDetector>

@@ -58,6 +58,7 @@ export const DetailHeroArtwork = ({
     round,
     serverConnection,
     style,
+    width,
     wrapStyle,
 }: {
     artworkImageId?: string;
@@ -68,6 +69,8 @@ export const DetailHeroArtwork = ({
     round?: boolean;
     serverConnection?: ServerAuthenticationResult | null;
     style: StyleProp<ImageStyle>;
+    /** The hero's width in dp — see ArtworkImage's `width`. */
+    width: number;
     wrapStyle?: StyleProp<ViewStyle>;
 }) => {
     const uri = primaryUri ?? fallbackUri;
@@ -84,6 +87,7 @@ export const DetailHeroArtwork = ({
             serverConnection={serverConnection}
             style={style}
             uri={uri}
+            width={width}
         />
     );
     return wrapStyle ? <View style={wrapStyle}>{image}</View> : image;
@@ -350,6 +354,7 @@ export const MediaDetailHero = memo(function MediaDetailHero({
                         primaryUri={heroArtworkUrl}
                         serverConnection={serverConnection}
                         style={styles.albumHeroArtwork}
+                        width={styles.albumHeroArtwork.width}
                     />
                 </View>
             </Choreographed>

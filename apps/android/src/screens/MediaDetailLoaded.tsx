@@ -628,6 +628,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                         round
                         serverConnection={serverConnection}
                         style={[styles.detailArtwork, styles.detailArtworkRound]}
+                        width={styles.detailArtwork.width}
                     />
                     <View style={styles.detailHeroText}>
                         <Text style={styles.detailType}>{getDetailTypeLabel(detail.type)}</Text>

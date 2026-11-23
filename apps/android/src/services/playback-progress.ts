@@ -15,6 +15,8 @@ export interface LoadedPlaybackProgress {
     currentTimeSeconds: number;
     durationSeconds?: number;
     isFinished: boolean;
+    /** The server's lastPositionAt (epoch ms), when it has one. */
+    updatedAtMs?: number;
 }
 
 const samoFetch: typeof fetch = (url, init) => fetch(url, init);
@@ -53,10 +55,12 @@ export const loadCurrentPlaybackProgress = async (
             return null;
         }
 
+        const updatedAtMs = state.lastPositionAt ? Date.parse(state.lastPositionAt) : NaN;
         return {
             currentTimeSeconds: state.completed ? 0 : currentTimeSeconds,
             durationSeconds: undefined,
             isFinished: Boolean(state.completed),
+            ...(Number.isFinite(updatedAtMs) ? { updatedAtMs } : {}),
         };
     } catch {
         return null;

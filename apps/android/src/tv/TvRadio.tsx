@@ -7,10 +7,10 @@ import { useSamoRadioDevice } from '../hooks/use-samo-radio-device';
 import { useSamoRadioSelector } from '../state/samo-radio';
 import { colors } from '../theme/tokens';
 import { type HomeDisplaySection } from '../types/home';
-import { TvShelf } from './TvCollections';
+import { TvShelf, TvTopFade } from './TvCollections';
 import { TvButton, TvFocusScope, TvPressable } from './TvControls';
 import { TvTransportButton } from './TvPlayer';
-import { TV_SCROLL_EDGE, tvStyles as s } from './tv-styles';
+import { TV_LIST_PROPS, tvFocus, tvStyles as s } from './tv-styles';
 import { tvDisplayText } from './tv-text';
 
 export type TvRadioPanelSelection = { deviceId: string; kind: 'tune' | 'options' };
@@ -25,35 +25,39 @@ function RadioDevice({ device }: { device: SamoRadioDevice }) {
     const volume = Math.round((radio.state?.volume ?? 0) * 100);
     return (
         <View style={s.radioCard}>
-            <View style={s.radioDeviceHeader}>
-                <Text numberOfLines={1} style={s.eyebrow}>
-                    {device.name}
-                </Text>
-                <Text style={s.radioDeviceLabel}>samo radio</Text>
-            </View>
             <View style={s.radioHead}>
                 <ArtworkImage
                     uri={radio.artworkUrl}
                     contentSource={radio.contentSource}
                     letter={device.name.slice(0, 1)}
                     style={s.radioSleeve}
+                    width={s.radioSleeve.width}
                 />
                 <View style={s.radioCopy}>
-                    <Text style={s.playerEyebrow}>
-                        {radio.state?.item ? (radio.onChannel ? 'On air' : 'Now playing') : 'Idle'}
-                    </Text>
+                    <View style={s.radioDevice}>
+                        <Text numberOfLines={1} style={s.eyebrow}>
+                            {device.name}
+                        </Text>
+                        <Text style={s.label}>
+                            {radio.state?.item
+                                ? radio.onChannel
+                                    ? 'On air'
+                                    : 'Now playing'
+                                : 'Idle'}
+                        </Text>
+                    </View>
                     <Text numberOfLines={2} style={s.radioTitle}>
                         {tvDisplayText(radio.now?.title) ||
                             (radio.state ? 'Nothing playing' : 'Connecting…')}
                     </Text>
                     {radio.state ? (
-                        <Text numberOfLines={2} style={s.radioMeta}>
+                        <Text numberOfLines={1} style={s.radioMeta}>
                             {radio.state.item
                                 ? tvDisplayText(radio.meta)
                                 : 'Choose a station to start it.'}
                         </Text>
                     ) : null}
-                    <Text numberOfLines={1} style={s.radioStatus}>
+                    <Text numberOfLines={1} style={[s.muted, s.radioStatus]}>
                         {radio.busyCommand
                             ? 'Updating…'
                             : radio.isPaused
@@ -87,7 +91,7 @@ function RadioDevice({ device }: { device: SamoRadioDevice }) {
                                     <PlayPauseGlyph
                                         color={color}
                                         isPlaying={!radio.isPaused}
-                                        size={26}
+                                        size={24}
                                     />
                                 )}
                             />
@@ -107,21 +111,16 @@ function RadioDevice({ device }: { device: SamoRadioDevice }) {
                             <TvButton
                                 id={`${id}:quieter`}
                                 label={`Lower volume on ${device.name}`}
-                                style={s.volumeStep}
+                                look={tvFocus.icon}
+                                style={s.iconButton}
                                 onPress={() =>
                                     radio.commitVolume(Math.max(0, radio.state!.volume - 0.05))
                                 }
                             >
-                                {(focused) => (
-                                    <Text
-                                        style={[s.volumeStepText, focused && s.buttonTextFocused]}
-                                    >
-                                        −
-                                    </Text>
-                                )}
+                                <Text style={s.volumeStepText}>−</Text>
                             </TvButton>
                             <View style={s.radioVolumeReadout}>
-                                <Text style={s.radioVolumeLabel}>{volume}%</Text>
+                                <Text style={s.meta}>{volume}%</Text>
                                 <View style={s.radioVolumeTrack}>
                                     <View style={[s.radioVolumeFill, { width: `${volume}%` }]} />
                                 </View>
@@ -129,31 +128,24 @@ function RadioDevice({ device }: { device: SamoRadioDevice }) {
                             <TvButton
                                 id={`${id}:louder`}
                                 label={`Raise volume on ${device.name}`}
-                                style={s.volumeStep}
+                                look={tvFocus.icon}
+                                style={s.iconButton}
                                 onPress={() =>
                                     radio.commitVolume(Math.min(1, radio.state!.volume + 0.05))
                                 }
                             >
-                                {(focused) => (
-                                    <Text
-                                        style={[s.volumeStepText, focused && s.buttonTextFocused]}
-                                    >
-                                        +
-                                    </Text>
-                                )}
+                                <Text style={s.volumeStepText}>+</Text>
                             </TvButton>
                         </View>
                         <View style={s.radioActions}>
                             <TvButton
                                 id={`${id}:tune`}
                                 label="Stations"
-                                style={s.quietButton}
                                 onPress={() => openPanel({ deviceId: device.id, kind: 'tune' })}
                             />
                             <TvButton
                                 id={`${id}:options`}
                                 label="Options"
-                                style={s.quietButton}
                                 onPress={() => openPanel({ deviceId: device.id, kind: 'options' })}
                             />
                         </View>
@@ -163,7 +155,9 @@ function RadioDevice({ device }: { device: SamoRadioDevice }) {
                     ) : null}
                 </>
             ) : (
-                <Text style={s.muted}>{device.lastError ?? 'Waiting for the device'}</Text>
+                <Text style={[s.muted, s.radioStatus]}>
+                    {device.lastError ?? 'Waiting for the device'}
+                </Text>
             )}
             {radio.error ? <Text style={s.error}>{radio.error}</Text> : null}
         </View>
@@ -176,7 +170,9 @@ export function TvRadioContent({ sections }: { sections: HomeDisplaySection[] })
     const stations = sections.filter((section) => section.variant === 'radio');
     return (
         <>
-            {devices.length > 1 ? <Text style={s.radioSectionLabel}>Around your home</Text> : null}
+            {devices.length > 1 ? (
+                <Text style={[s.sectionTitle, s.radioSectionLabel]}>Around your home</Text>
+            ) : null}
             {devices.map((device) => (
                 <RadioDevice key={device.id} device={device} />
             ))}
@@ -187,8 +183,8 @@ export function TvRadioContent({ sections }: { sections: HomeDisplaySection[] })
                 <TvShelf key={section.key} section={{ ...section, title: 'Listen on this TV' }} />
             ))}
             {!devices.length && !stations.length ? (
-                <View style={s.radioNotice}>
-                    <Text style={s.sectionTitle}>No stations yet</Text>
+                <View style={s.empty}>
+                    <Text style={s.emptyTitle}>No stations yet</Text>
                     <Text style={s.emptyText}>
                         Add stations from samo on your phone or computer. A samo-radio on your
                         network shows up here too.
@@ -210,21 +206,18 @@ export function TvRadio({ active, sections }: { active: boolean; sections: HomeD
             defaultFocus={firstDevice ? `radio:${firstDevice}:toggle` : 'radio:first'}
             name="page:radio"
         >
-            <ScrollView
-                contentContainerStyle={s.pageScroll}
-                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
-                showsVerticalScrollIndicator={false}
-            >
-                <View style={s.radioPageHeader}>
+            <ScrollView contentContainerStyle={s.pageScroll} {...TV_LIST_PROPS}>
+                <View style={s.pageHeader}>
                     <Text style={s.pageTitle}>Radio</Text>
                     {stationCount ? (
-                        <Text style={s.muted}>
+                        <Text style={s.meta}>
                             {stationCount} {stationCount === 1 ? 'station' : 'stations'}
                         </Text>
                     ) : null}
                 </View>
                 <TvRadioContent sections={sections} />
             </ScrollView>
+            <TvTopFade />
         </TvFocusScope>
     );
 }
@@ -260,7 +253,7 @@ export function TvRadioPanel({
                         id="radio-panel:close"
                         label="Done"
                         onPress={onClose}
-                        style={s.radioPanelClose}
+                        style={s.panelClose}
                         pin={{ left: true, right: true, down: true }}
                     />
                 </View>
@@ -292,35 +285,32 @@ function RadioPanelContent({
               }));
     return (
         <>
-            <Text style={s.eyebrow}>{device.name}</Text>
-            <Text style={[s.pageTitle, s.radioPanelTitle]}>
+            <Text style={[s.eyebrow, s.panelTitle]}>{device.name}</Text>
+            <Text style={[s.pageTitle, s.panelTitle]}>
                 {kind === 'tune' ? 'Choose a station' : 'Device options'}
             </Text>
-            <Text numberOfLines={2} style={s.radioPanelStatus}>
+            <Text numberOfLines={2} style={[s.muted, s.panelStatus]}>
                 {radio.busyCommand ? 'Updating…' : (radio.state?.channel?.name ?? radio.now?.title)}
             </Text>
             <FlatList
+                contentContainerStyle={s.menuList}
                 data={choices}
                 keyExtractor={(choice) => choice.id}
                 initialNumToRender={7}
                 maxToRenderPerBatch={4}
                 windowSize={3}
-                removeClippedSubviews={false}
+                {...TV_LIST_PROPS}
                 ListEmptyComponent={<Text style={s.emptyText}>No stations available yet.</Text>}
                 renderItem={({ item, index }) => (
                     <TvPressable
                         id={`radio-panel:${item.id}`}
                         label={item.label}
+                        look={tvFocus.row}
                         onPress={item.run}
                         pin={{ left: true, right: true, up: index === 0 }}
                         style={s.menuItem}
-                        focusedStyle={s.menuItemFocused}
                     >
-                        {(focused) => (
-                            <Text style={[s.menuLabel, focused && s.buttonTextFocused]}>
-                                {item.label}
-                            </Text>
-                        )}
+                        <Text style={s.menuLabel}>{item.label}</Text>
                     </TvPressable>
                 )}
             />

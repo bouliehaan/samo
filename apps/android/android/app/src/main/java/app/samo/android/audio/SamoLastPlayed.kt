@@ -8,9 +8,12 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -96,17 +99,29 @@ class SamoLastPlayedModule(
                     com.facebook.react.bridge.ReadableType.Number -> json.put(key, map.getDouble(key))
                     com.facebook.react.bridge.ReadableType.String -> json.put(key, map.getString(key))
                     com.facebook.react.bridge.ReadableType.Map -> map.getMap(key)?.let { json.put(key, mapToJson(it)) }
-                    com.facebook.react.bridge.ReadableType.Array -> {
-                        // Last-played payload is documented as flat metadata
-                        // (id, title, url, source, quality {…}) — no arrays
-                        // today. Skip if we ever see one rather than carrying
-                        // a recursive array converter that nothing exercises.
-                        Log.w(TAG, "skipping array field in last-played payload: $key")
-                    }
+                    // An audiobook's chapters ride in timelineSegments. Dropping
+                    // them restored a book with only the chapter it was saved
+                    // in, so the queue showed the prologue and nothing else.
+                    com.facebook.react.bridge.ReadableType.Array -> map.getArray(key)?.let { json.put(key, arrayToJson(it)) }
                     else -> {}
                 }
             } catch (error: Exception) {
                 Log.w(TAG, "could not serialize last-played field $key: ${error.message}")
+            }
+        }
+        return json
+    }
+
+    private fun arrayToJson(array: ReadableArray): JSONArray {
+        val json = JSONArray()
+        for (i in 0 until array.size()) {
+            when (array.getType(i)) {
+                com.facebook.react.bridge.ReadableType.Null -> json.put(JSONObject.NULL)
+                com.facebook.react.bridge.ReadableType.Boolean -> json.put(array.getBoolean(i))
+                com.facebook.react.bridge.ReadableType.Number -> json.put(array.getDouble(i))
+                com.facebook.react.bridge.ReadableType.String -> json.put(array.getString(i))
+                com.facebook.react.bridge.ReadableType.Map -> json.put(array.getMap(i)?.let { mapToJson(it) } ?: JSONObject.NULL)
+                com.facebook.react.bridge.ReadableType.Array -> json.put(array.getArray(i)?.let { arrayToJson(it) } ?: JSONObject.NULL)
             }
         }
         return json
@@ -125,7 +140,26 @@ class SamoLastPlayedModule(
                 is Double -> out.putDouble(key, value)
                 is String -> out.putString(key, value)
                 is JSONObject -> out.putMap(key, jsonToMap(value))
+                is JSONArray -> out.putArray(key, jsonToArray(value))
                 else -> out.putString(key, value.toString())
+            }
+        }
+        return out
+    }
+
+    private fun jsonToArray(json: JSONArray): WritableArray {
+        val out = Arguments.createArray()
+        for (i in 0 until json.length()) {
+            when (val value = json.get(i)) {
+                JSONObject.NULL -> out.pushNull()
+                is Boolean -> out.pushBoolean(value)
+                is Int -> out.pushInt(value)
+                is Long -> out.pushDouble(value.toDouble())
+                is Double -> out.pushDouble(value)
+                is String -> out.pushString(value)
+                is JSONObject -> out.pushMap(jsonToMap(value))
+                is JSONArray -> out.pushArray(jsonToArray(value))
+                else -> out.pushString(value.toString())
             }
         }
         return out

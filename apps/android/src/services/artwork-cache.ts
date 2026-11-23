@@ -1,15 +1,17 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { canonicalArtworkKey } from '../utils/artwork-canonical';
+import { COVER_CACHE_WIDTH, withArtworkWidth } from '../utils/artwork-size';
 import { safeParseJson } from '../utils/json';
 
 /**
  * Managed on-disk cover-art cache that WE own, so the user's size limit is real
  * and enforceable (expo-image's built-in disk cache exposes neither a size nor a
  * cap). Artwork is downloaded once into a dedicated directory keyed by a hash of
- * the CANONICAL (token-stripped) remote URL — so a cover stays a cache hit even
- * after its stream token rotates; a small persisted index tracks per-file bytes
- * + last access so we can report the total size and LRU-evict down to the cap.
+ * the CANONICAL (token-stripped, width-free) remote URL — so a cover stays a
+ * cache hit even after its stream token rotates, and whatever size a slot asks
+ * for it at; a small persisted index tracks per-file bytes, width + last access
+ * so we can report the total size and LRU-evict down to the cap.
  *
  * ArtworkImage feeds expo-image the returned `file://` uri with cachePolicy
  * "memory" — this directory is the single source of truth for on-disk art.
@@ -24,7 +26,9 @@ const PRUNE_DEBOUNCE_MS = 6_000;
 // Bump when the on-disk filename scheme changes. v2 hashes the CANONICAL
 // (token-stripped) URL; v1 filenames were hashed from token-bearing URLs and so
 // can never match a v2 lookup — they're dropped once on first load (see
-// loadIndex) and the bulk prefetch re-warms under stable keys.
+// loadIndex) and the bulk prefetch re-warms under stable keys. Taking the width
+// out of the name did not need a bump: until covers were sized, no samo URL
+// kept here carried one.
 const INDEX_VERSION = 2;
 
 export const DEFAULT_ARTWORK_CACHE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
@@ -33,12 +37,65 @@ interface ArtworkEntry {
     bytes: number;
     lastAccess: number;
     url?: string;
+    /**
+     * The width this copy was kept at; absent for a cover as the server
+     * stores it.
+     *
+     * Recorded per copy rather than once for the cache, so a copy outlives a
+     * change of `COVER_CACHE_WIDTH`. Phones kept originals until November
+     * 2026: those still draw every slot they are wide enough for, and still
+     * draw offline, until a library warm replaces each with a copy at the
+     * cache's width. Dropping them on the change would have re-downloaded the
+     * library before anything could be drawn from the cache again.
+     */
+    width?: number;
 }
 
 interface PersistedIndex {
     entries: Record<string, ArtworkEntry>;
     version: number;
 }
+
+interface CoverAddress {
+    /** The file the cover is kept in, named for the cover with no width, so
+     *  one file stands for it whatever size it is asked for at. */
+    name: string;
+    /** What a download fetches: a samo cover at the cache's width, anything
+     *  else as it came. */
+    url: string;
+    /** The width `url` asks for; absent for the cover as the server stores it. */
+    width?: number;
+}
+
+const ADDRESS_LIMIT = 4096;
+const addresses = new Map<string, CoverAddress>();
+
+/**
+ * Where a cover is kept here. Every reader and writer — the library warm, a
+ * detail page's prefetch, a tile's peek — means the same file by the same
+ * cover, whatever size it asked for: a row's 128px cover and a hero's 1024px
+ * one are the one cover, kept once at `COVER_CACHE_WIDTH`.
+ *
+ * Memoized, because recognising a samo URL parses it, and a peek is on the
+ * render path of every tile.
+ */
+const addressOf = (url: string): CoverAddress => {
+    let address = addresses.get(url);
+    if (address === undefined) {
+        if (addresses.size >= ADDRESS_LIMIT) {
+            addresses.clear();
+        }
+        const cover = withArtworkWidth(url, undefined);
+        const sized = withArtworkWidth(url, COVER_CACHE_WIDTH);
+        address = {
+            name: hashUrl(canonicalArtworkKey(cover)),
+            url: sized,
+            width: sized === cover ? undefined : COVER_CACHE_WIDTH,
+        };
+        addresses.set(url, address);
+    }
+    return address;
+};
 
 type ArtworkIndex = Map<string, ArtworkEntry>;
 
@@ -162,6 +219,7 @@ const loadIndex = async (): Promise<ArtworkIndex> => {
                         bytes: entry.bytes,
                         lastAccess: typeof entry.lastAccess === 'number' ? entry.lastAccess : 0,
                         url: entry.url,
+                        width: typeof entry.width === 'number' ? entry.width : undefined,
                     });
                 }
             }
@@ -214,8 +272,42 @@ export const peekArtworkLocalUri = (remoteUrl: string): string | null => {
     if (!loadedIndex) {
         return null;
     }
-    const name = hashUrl(canonicalArtworkKey(remoteUrl));
+    const { name } = addressOf(remoteUrl);
     return loadedIndex.has(name) ? `${ARTWORK_DIR}${name}` : null;
+};
+
+export interface ArtworkCopy {
+    uri: string;
+    /** Whether the copy is as wide as the slot asking for it draws. */
+    wideEnough: boolean;
+}
+
+/**
+ * {@link peekArtworkLocalUri} for a slot that draws at `width` — a rung from
+ * `getArtworkWidth`, or none for the cover as stored. The cache keeps each
+ * cover at one width, so a slot larger than that is told the copy is too
+ * small for it: still worth having, as what to show while the slot's own
+ * size loads and what to draw when it cannot.
+ */
+export const peekArtworkCopy = (
+    remoteUrl: string,
+    width: number | undefined,
+): ArtworkCopy | null => {
+    if (!remoteUrl || !loadedIndex) {
+        return null;
+    }
+    if (remoteUrl.startsWith('file://')) {
+        return { uri: remoteUrl, wideEnough: true };
+    }
+    const { name } = addressOf(remoteUrl);
+    const entry = loadedIndex.get(name);
+    if (!entry) {
+        return null;
+    }
+    return {
+        uri: `${ARTWORK_DIR}${name}`,
+        wideEnough: entry.width === undefined || (width !== undefined && width <= entry.width),
+    };
 };
 
 const persistIndex = async (): Promise<void> => {
@@ -309,31 +401,38 @@ const schedulePrune = (): void => {
 };
 
 const downloadArtwork = async (
-    name: string,
+    address: CoverAddress,
     fileUri: string,
-    remoteUrl: string,
     headers: Record<string, string> | undefined,
+    replacing: boolean,
 ): Promise<string | null> => {
+    // A replacement lands beside the copy it replaces and is renamed over it
+    // (an atomic replace), so a download that fails leaves that copy as it was.
+    const target = replacing ? `${fileUri}.part` : fileUri;
     try {
         await ensureDir();
         const result = await FileSystem.downloadAsync(
-            remoteUrl,
-            fileUri,
+            address.url,
+            target,
             headers ? { headers } : undefined,
         );
         if (result.status >= 400) {
-            await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => undefined);
+            await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
             return null;
+        }
+        if (replacing) {
+            await FileSystem.moveAsync({ from: target, to: fileUri });
         }
         const info = await FileSystem.getInfoAsync(fileUri);
         if (!info.exists) {
             return null;
         }
         const index = await getIndex();
-        setIndexEntry(index, name, {
+        setIndexEntry(index, address.name, {
             bytes: info.size,
             lastAccess: Date.now(),
-            url: canonicalArtworkKey(remoteUrl),
+            url: canonicalArtworkKey(address.url),
+            width: address.width,
         });
         schedulePersist();
         schedulePrune();
@@ -346,25 +445,23 @@ const downloadArtwork = async (
     }
 };
 
-/**
- * Resolves a remote artwork URL to a local `file://` uri, downloading + caching
- * it on first request. Returns null on failure so the caller can fall back to the
- * remote URL. Concurrent requests for the same URL share a single download.
- */
-export const getArtworkLocalUri = async (
-    remoteUrl: string,
-    headers?: Record<string, string>,
+const cacheArtwork = async (
+    requestedUrl: string,
+    headers: Record<string, string> | undefined,
+    replaceOtherWidths: boolean,
 ): Promise<string | null> => {
-    if (!remoteUrl || remoteUrl.startsWith('file://')) {
-        return remoteUrl || null;
+    if (!requestedUrl || requestedUrl.startsWith('file://')) {
+        return requestedUrl || null;
     }
-    // Filename is keyed by the CANONICAL (token-stripped) URL so the file is a
-    // hit across token rotations; the fetch below still uses the full URL.
-    const name = hashUrl(canonicalArtworkKey(remoteUrl));
+    // The filename is the CANONICAL (token-stripped) cover, so the file is a
+    // hit across token rotations; the fetch still uses the full URL.
+    const address = addressOf(requestedUrl);
+    const { name } = address;
     const fileUri = `${ARTWORK_DIR}${name}`;
 
     const index = await getIndex();
     const existing = index.get(name);
+    let replacing = false;
     if (existing) {
         const info = await FileSystem.getInfoAsync(fileUri);
         if (info.exists) {
@@ -372,24 +469,42 @@ export const getArtworkLocalUri = async (
             // Access-only: nothing was added or removed, so this must not drag
             // the whole index through a rewrite on the fast timer.
             scheduleAccessPersist();
-            return fileUri;
+            if (!replaceOtherWidths || existing.width === address.width) {
+                return fileUri;
+            }
+            replacing = true;
+        } else {
+            // The file vanished under us (an external clear, a failed write).
+            // Drop the entry through the accounting helper so the running
+            // total does not keep charging for bytes that are not on disk.
+            deleteIndexEntry(index, name);
         }
-        // The file vanished under us (an external clear, a failed write). Drop
-        // the entry through the accounting helper so the running total does not
-        // keep charging for bytes that are not on disk.
-        deleteIndexEntry(index, name);
     }
 
     const pending = inFlightDownloads.get(name);
     if (pending) {
         return pending;
     }
-    const download = downloadArtwork(name, fileUri, remoteUrl, headers).finally(() => {
+    const download = downloadArtwork(address, fileUri, headers, replacing).finally(() => {
         inFlightDownloads.delete(name);
     });
     inFlightDownloads.set(name, download);
     return download;
 };
+
+/**
+ * Resolves a remote artwork URL to a local `file://` uri, downloading + caching
+ * it on first request. Returns null on failure so the caller can fall back to the
+ * remote URL. Concurrent requests for the same URL share a single download.
+ *
+ * Any copy of the cover answers, whatever width it was kept at: replacing one
+ * kept at another width is the library warm's job, on a network where the
+ * bytes are free.
+ */
+export const getArtworkLocalUri = (
+    requestedUrl: string,
+    headers?: Record<string, string>,
+): Promise<string | null> => cacheArtwork(requestedUrl, headers, false);
 
 /** Total bytes currently held in the managed cover-art cache. */
 export const getArtworkCacheSizeBytes = async (): Promise<number> => {
@@ -410,29 +525,35 @@ const BULK_PREFETCH_CAP_CHECK_EVERY = 25;
  * concurrency, stopping once the cache reaches its size cap. De-duplicates by
  * URL. Used after a sync to warm the WHOLE library's art so browsing never
  * triggers a per-tile fetch. Already-cached entries are skipped cheaply.
+ *
+ * A copy kept at another width than the cache's is not "already cached": it
+ * is replaced, which is how a cache of originals becomes one of covers sized
+ * for the tiles drawing them.
  */
 export const prefetchArtworkUrls = async (
     entries: ArtworkPrefetchEntry[],
     options?: { isCancelled?: () => boolean },
 ): Promise<void> => {
+    const index = await getIndex();
     const seen = new Set<string>();
     const queue = entries.filter((entry) => {
         if (!entry.uri || entry.uri.startsWith('file://')) {
             return false;
         }
-        // De-dup by canonical key so the same cover requested with different
-        // stream tokens collapses to one download.
-        const key = canonicalArtworkKey(entry.uri);
+        // De-dup by cover so the same one asked for at different sizes, or
+        // with different stream tokens, collapses to one download.
+        const { name, width } = addressOf(entry.uri);
+        const kept = index.get(name);
         if (
-            seen.has(key) ||
-            // Already cached — skip via the sync peek so a warm-cache launch does
-            // NOT do a native `getInfoAsync` stat for every one of thousands of
-            // covers. Only genuine misses fall through to a download.
-            peekArtworkLocalUri(entry.uri)
+            seen.has(name) ||
+            // Already cached at the cache's width — skipped on the index alone,
+            // so a warm-cache launch does NOT do a native `getInfoAsync` stat
+            // for every one of thousands of covers.
+            (kept !== undefined && kept.width === width)
         ) {
             return false;
         }
-        seen.add(key);
+        seen.add(name);
         return true;
     });
 
@@ -456,7 +577,7 @@ export const prefetchArtworkUrls = async (
             const entry = queue[cursor];
             cursor += 1;
             if (entry) {
-                await getArtworkLocalUri(entry.uri, entry.headers).catch(() => undefined);
+                await cacheArtwork(entry.uri, entry.headers, true).catch(() => undefined);
             }
         }
     };

@@ -1,5 +1,5 @@
 import { type MobileHomeHero, MobileHomeItemType } from '@samo/core/mobile';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { FlatList, ScrollView, Text, View } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
@@ -18,10 +18,15 @@ import { playOnTv, selectTvItem, tvPageScope } from './tv-actions';
 import { TvShelf } from './TvCollections';
 import { TvRadioContent } from './TvRadio';
 import { mediaContextMenuApi } from '../hooks/use-android-context-menu';
-import { TvButton, TvFocusScope } from './TvControls';
+import { TvButton, TvFocusScope, TvPressable } from './TvControls';
 import { TvFocusGroup } from './TvFocusGroup';
-import { didTvFocusArriveUp } from './tv-focus';
-import { TV_SCROLL_EDGE, tvStyles as s } from './tv-styles';
+import {
+    TV_ANCHOR_TOP,
+    TV_HOME_SHELF_ANCHOR_Y,
+    TV_LIST_PROPS,
+    tvFocus,
+    tvStyles as s,
+} from './tv-styles';
 
 const HERO_ACTION_ID = 'hero:action';
 
@@ -51,14 +56,7 @@ const getHomeDefaultFocus = (sections: HomeDisplaySection[]): string => {
  * (Shuffle for the Explore drop, Play otherwise) as the first thing focused
  * when the app opens.
  */
-const TvHeroCard = memo(function TvHeroCard({
-    item,
-    onFocus,
-}: {
-    item: AndroidRecentContentSourceItem;
-    /** Focus reaching the card's actions, which sit low in it. */
-    onFocus: () => void;
-}) {
+const TvHeroCard = memo(function TvHeroCard({ item }: { item: AndroidRecentContentSourceItem }) {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const hero = heroOf(item);
     const title = hero?.title ?? item.title;
@@ -81,6 +79,7 @@ const TvHeroCard = memo(function TvHeroCard({
                 letter={title.slice(0, 1)}
                 style={s.heroArt}
                 uri={sleeve.artworkUrl}
+                width={s.heroArt.width}
             />
             <View style={s.heroCopy}>
                 {hero?.eyebrow ? (
@@ -96,11 +95,18 @@ const TvHeroCard = memo(function TvHeroCard({
                         {hero.subtitle}
                     </Text>
                 ) : null}
+                {hero?.meta ? (
+                    <Text numberOfLines={1} style={[s.meta, s.heroMeta]}>
+                        {hero.meta}
+                    </Text>
+                ) : null}
+                {/* The card is the top of the page: its actions bring all of
+                    it back, not just themselves. */}
                 <TvFocusGroup style={s.heroActions}>
                     <TvButton
+                        anchorY={TV_ANCHOR_TOP}
                         id={HERO_ACTION_ID}
                         label={`${actionLabel} ${title}`}
-                        onFocus={onFocus}
                         onLongPress={() => mediaContextMenuApi.openForItem(item)}
                         onPress={() =>
                             isCollection
@@ -109,38 +115,21 @@ const TvHeroCard = memo(function TvHeroCard({
                         }
                         primary
                     >
-                        {(focused) => (
-                            <>
-                                {shuffled ? (
-                                    <ShuffleGlyph
-                                        color={focused ? colors.background : colors.text}
-                                        size={18}
-                                    />
-                                ) : (
-                                    <PlayPauseGlyph
-                                        color={focused ? colors.background : colors.text}
-                                        isPlaying={false}
-                                        size={16}
-                                    />
-                                )}
-                                <Text style={[s.buttonText, focused && s.buttonTextFocused]}>
-                                    {actionLabel}
-                                </Text>
-                            </>
+                        {shuffled ? (
+                            <ShuffleGlyph color={colors.background} size={18} />
+                        ) : (
+                            <PlayPauseGlyph color={colors.background} isPlaying={false} size={16} />
                         )}
+                        <Text style={[s.buttonText, s.buttonTextPrimary]}>{actionLabel}</Text>
                     </TvButton>
                     {isCollection ? (
                         <TvButton
+                            anchorY={TV_ANCHOR_TOP}
                             id="hero:open"
                             label={`Open ${title}`}
-                            onFocus={onFocus}
                             onPress={() => selectTvItem(item)}
                         >
-                            {(focused) => (
-                                <Text style={[s.buttonText, focused && s.buttonTextFocused]}>
-                                    Open
-                                </Text>
-                            )}
+                            <Text style={s.buttonText}>Open</Text>
                         </TvButton>
                     ) : null}
                 </TvFocusGroup>
@@ -152,7 +141,8 @@ const TvHeroCard = memo(function TvHeroCard({
 /**
  * Home, as the phone composes it: the same derive (heroes, Recents, Podcast
  * Feed, Recently Added, Albums, Audiobooks, Podcasts, Artists, Playlists,
- * Rediscover), the same "Remove from Home" hides, the same filters.
+ * Rediscover), the same "Remove from Home" hides, the same filter chips —
+ * which stay put at the top while the page moves beneath them.
  */
 export const TvHomePage = memo(function TvHomePage({
     active,
@@ -173,41 +163,6 @@ export const TvHomePage = memo(function TvHomePage({
     );
     const defaultFocus = getHomeDefaultFocus(sections);
 
-    const list = useRef<FlatList<HomeDisplaySection>>(null);
-    // The hero's actions sit low in a tall card: a plain scroll would stop
-    // with them at the edge margin and the card's top cut off.
-    const revealTop = useCallback(() => {
-        if (didTvFocusArriveUp()) list.current?.scrollToOffset({ animated: true, offset: 0 });
-    }, []);
-
-    const pills = (
-        <TvFocusGroup style={s.pills}>
-            {HOME_FILTERS.map((option) => (
-                <TvButton
-                    id={`home-filter:${option.id}`}
-                    key={option.id}
-                    label={option.label}
-                    onPress={() => setFilter(option.id)}
-                    selected={option.id === filter}
-                    focusedStyle={s.pillFocused}
-                    style={[s.pill, option.id === filter && s.pillActive]}
-                >
-                    {(focused) => (
-                        <Text
-                            style={[
-                                s.pillText,
-                                option.id === filter && s.pillTextActive,
-                                focused && s.buttonTextFocused,
-                            ]}
-                        >
-                            {option.label}
-                        </Text>
-                    )}
-                </TvButton>
-            ))}
-        </TvFocusGroup>
-    );
-
     const { homeContentState } = home;
     let body;
     if (homeContentState.status === 'idle' || homeContentState.status === 'loading') {
@@ -216,10 +171,7 @@ export const TvHomePage = memo(function TvHomePage({
         body = <Text style={[s.error, s.homeMessage]}>{homeContentState.message}</Text>;
     } else if (filter === 'radio') {
         body = (
-            <ScrollView
-                contentContainerStyle={s.homeScroll}
-                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
-            >
+            <ScrollView contentContainerStyle={s.homeScroll} {...TV_LIST_PROPS}>
                 <TvRadioContent sections={sections} />
             </ScrollView>
         );
@@ -236,38 +188,72 @@ export const TvHomePage = memo(function TvHomePage({
             <FlatList
                 contentContainerStyle={s.homeScroll}
                 data={sections}
-                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
                 initialNumToRender={2}
                 keyExtractor={(section) => section.key}
                 maxToRenderPerBatch={1}
-                ref={list}
-                // Keep the next shelf attached so Android can focus it before scrolling.
-                removeClippedSubviews={false}
-                renderItem={({ item: section }) =>
-                    section.variant === 'heroes' ? (
-                        section.items[0] ? (
-                            <TvHeroCard item={section.items[0]} onFocus={revealTop} />
-                        ) : null
-                    ) : (
-                        <TvShelf allowRemoveFromHome section={section} />
-                    )
-                }
-                showsVerticalScrollIndicator={false}
-                windowSize={3}
+                renderItem={renderHomeSection}
+                // Every shelf, a shelf at a time, once Home has drawn. Home is
+                // a handful of shelves of at most 20 covers, and a window that
+                // mounted each as it scrolled into view did it in the frame a
+                // move down was gliding in — a title and six covers in one
+                // frame (28ms on an emulator) on most presses of Down.
+                windowSize={21}
+                {...TV_LIST_PROPS}
             />
         );
     }
 
     return (
         <TvFocusScope active={active} defaultFocus={defaultFocus} name={tvPageScope('home')}>
-            <View style={s.homeChrome}>
-                <View style={s.homeHeader}>
-                    <Text style={s.homeTitle}>Library</Text>
-                    <Text style={s.homeKicker}>Samo</Text>
-                </View>
-                <View style={s.homeFilters}>{pills}</View>
+            <View style={s.homeBar}>
+                <TvFocusGroup style={s.chips}>
+                    {HOME_FILTERS.map((option) => (
+                        <TvFilterChip
+                            active={option.id === filter}
+                            id={option.id}
+                            key={option.id}
+                            label={option.label}
+                            onSelect={setFilter}
+                        />
+                    ))}
+                </TvFocusGroup>
             </View>
             {body}
         </TvFocusScope>
+    );
+});
+
+const renderHomeSection = ({ item: section }: { item: HomeDisplaySection }) =>
+    section.variant === 'heroes' ? (
+        section.items[0] ? (
+            <TvHeroCard item={section.items[0]} />
+        ) : null
+    ) : (
+        <TvShelf allowRemoveFromHome anchorY={TV_HOME_SHELF_ANCHOR_Y} section={section} />
+    );
+
+/** One of the phone's filter pills: silver while it is the filter in force. */
+const TvFilterChip = memo(function TvFilterChip({
+    active,
+    id,
+    label,
+    onSelect,
+}: {
+    active: boolean;
+    id: HomeFilter;
+    label: string;
+    onSelect: (filter: HomeFilter) => void;
+}) {
+    return (
+        <TvPressable
+            id={`home-filter:${id}`}
+            label={label}
+            look={tvFocus.chip}
+            onPress={() => onSelect(id)}
+            selected={active}
+            style={[s.chip, active && s.chipActive]}
+        >
+            <Text style={[s.chipText, active && s.chipTextActive]}>{label}</Text>
+        </TvPressable>
     );
 });

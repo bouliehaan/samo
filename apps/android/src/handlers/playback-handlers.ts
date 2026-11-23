@@ -31,6 +31,7 @@ import { getPlaybackBridge } from '../state/playback-bridge';
 import { setAndroidPlaybackState } from '../state/playback-store';
 import { rememberMediaDetail } from '../utils/media-detail-cache';
 import { getNativeResumeProgress } from '../utils/native-resume';
+import { fresherResumeProgress } from '../utils/playback-resume';
 import {
     audiobookFilesTimelineDurationSeconds,
     buildAudiobookFilePlaybackQueue,
@@ -337,28 +338,20 @@ export const resolveAudiobookResumeSeconds = async (
     auth: ServerAuthenticationResult,
     detail: MobileMediaDetail,
 ): Promise<number> => {
-    const progress = await loadCurrentPlaybackProgressBounded(auth, detail.id);
+    // Flaky LAN: the bounded server read can transiently fail (null), which
+    // would seed the queue at 0 and lose the spot. The native local resume
+    // cache answers then, and wins outright when it is the newer of the two,
+    // same as refreshPlayableResumeFromServer.
+    const progress = fresherResumeProgress(
+        await loadCurrentPlaybackProgressBounded(auth, detail.id),
+        await getNativeResumeProgress('audiobook', detail.id),
+    );
     // `detail.durationSeconds` is the BOOK-GLOBAL timeline the saved position is
     // measured against — the per-chapter durations are not.
-    const resumeSeconds = resolveLongFormResumeSeconds({
-        completed: progress?.isFinished,
-        durationSeconds: detail.durationSeconds,
-        progressSeconds: progress?.currentTimeSeconds,
-    });
-    if (resumeSeconds > 0 || progress) {
-        return resumeSeconds;
-    }
-    // Flaky LAN: the bounded server read can transiently fail (null), which
-    // would seed the queue at 0 and lose the spot. Fall back to the native
-    // local resume cache, same as refreshPlayableResumeFromServer does.
-    const cached = await getNativeResumeProgress('audiobook', detail.id);
-    if (!cached) {
-        return resumeSeconds;
-    }
     return resolveLongFormResumeSeconds({
-        completed: cached.completed,
+        completed: progress?.completed,
         durationSeconds: detail.durationSeconds,
-        progressSeconds: cached.progressSeconds,
+        progressSeconds: progress?.progressSeconds,
     });
 };
 

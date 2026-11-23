@@ -314,6 +314,7 @@ export const DownloadsScreen = ({
                                 serverConnection={serverConnection}
                                 style={styles.downloadGroupArtwork}
                                 uri={group.collection.artworkUrl}
+                                width={styles.downloadGroupArtwork.width}
                             />
                         ) : (
                             <View

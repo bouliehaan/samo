@@ -72,6 +72,7 @@ export const MediaContextMenu = ({
                         isCircularArtwork && styles.mediaContextArtworkRound,
                     ]}
                     uri={artworkUrl}
+                    width={styles.mediaContextArtwork.width}
                 />
                 <View style={styles.mediaContextHeaderText}>
                     <Text style={styles.mediaContextEyebrow}>{eyebrow}</Text>

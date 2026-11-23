@@ -20,7 +20,7 @@ export const PlayerArtwork = memo(({
     immersive,
     reducedMotion,
     ...artwork
-}: Omit<ComponentProps<typeof ArtworkImage>, 'style'> & {
+}: Omit<ComponentProps<typeof ArtworkImage>, 'style' | 'width'> & {
     frame: LayoutRectangle;
     immersive: boolean;
     reducedMotion: boolean;
@@ -44,6 +44,11 @@ export const PlayerArtwork = memo(({
         };
     }, [frame]);
     const immersiveStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+    // The edge the cover is drawn at: the framed square, or a box the screen's
+    // width and taller than that, which `cover` fills by its height.
+    const drawnWidth = immersive
+        ? Math.max(SCREEN_WIDTH, frame.y + frame.height + 80)
+        : Math.max(0, Math.min(frame.width, frame.height - 24));
 
     if (frame.height <= 0) return null;
     return (
@@ -53,7 +58,12 @@ export const PlayerArtwork = memo(({
                 style={[StyleSheet.absoluteFill, { backgroundColor: IMMERSIVE_BASE }, immersiveStyle]}
             />
             <Reanimated.View pointerEvents="none" style={[artworkStyles.frame, imageStyle]}>
-                <ArtworkImage {...artwork} decodeFormat="argb" style={artworkStyles.image} />
+                <ArtworkImage
+                    {...artwork}
+                    decodeFormat="argb"
+                    style={artworkStyles.image}
+                    width={drawnWidth}
+                />
                 <Reanimated.View style={[StyleSheet.absoluteFill, immersiveStyle]}>
                     <LinearGradient
                         colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0)', 'rgba(16,17,20,0)', IMMERSIVE_BASE]}

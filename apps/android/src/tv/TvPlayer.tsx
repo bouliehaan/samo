@@ -28,10 +28,19 @@ import {
 import { closeTvPlayer, runTvAction } from './tv-actions';
 import { TvButton, TvFocusScope, TvPressable } from './TvControls';
 import { getTvFocusedControl } from './tv-focus';
-import { TV_QUEUE_ROW_HEIGHT, TV_SCROLL_EDGE, tvStyles as s } from './tv-styles';
+import { TV_LIST_PROPS, TV_QUEUE_ROW_HEIGHT, tvFocus, tvStyles as s } from './tv-styles';
 import { subscribeTvKeys } from './tv-keys';
 import { tvDisplayText } from './tv-text';
 
+/** The page's own dark, a shade lifted at the top: depth, without a blurred
+ *  copy of the cover to decode and composite. */
+const PLAYER_WASH = [colors.backgroundElevated, colors.background];
+
+/**
+ * A round control. Its glyph keeps its ink whether or not focus is on it (the
+ * ring is the focus), so it renders once: shuffle and repeat say they are on
+ * with a dot, the way the phone's do.
+ */
 export function TvTransportButton({
     id,
     label,
@@ -51,23 +60,13 @@ export function TvTransportButton({
         <TvPressable
             id={id}
             label={label}
+            look={primary ? tvFocus.transportPrimary : tvFocus.transport}
             onPress={onPress}
             selected={selected}
-            style={[
-                s.transportButton,
-                primary && s.transportPrimary,
-                selected && s.transportSelected,
-            ]}
-            focusedStyle={primary ? s.transportPrimaryFocused : s.transportFocused}
+            style={[s.transportButton, primary && s.transportPrimary]}
         >
-            {(focused) => (
-                <>
-                    {icon(primary || focused ? colors.background : colors.text)}
-                    {selected ? (
-                        <View style={[s.transportDot, focused && s.transportDotFocused]} />
-                    ) : null}
-                </>
-            )}
+            {icon(primary ? colors.background : selected ? colors.accentBright : colors.text)}
+            {selected ? <View style={s.transportDot} /> : null}
         </TvPressable>
     );
 }
@@ -80,8 +79,7 @@ const SEEK_TAP_MS = 10_000;
  * seconds of holding (repeats arrive ~20 a second), within reason at both
  * ends — a song does not fly past, a ten-hour book does not crawl.
  */
-const getScrubStepMs = (durationMs: number): number =>
-    clamp(durationMs / 120, 2_000, 60_000);
+const getScrubStepMs = (durationMs: number): number => clamp(durationMs / 120, 2_000, 60_000);
 
 /**
  * The seek bar. Left and Right scrub: a press skips ten seconds, a hold runs
@@ -93,6 +91,9 @@ function TvSeek() {
     const state = useAndroidPlaybackState();
     // Where a scrub would land, shown in place of the playhead until it does.
     const [scrubMs, setScrubMs] = useState<number | null>(null);
+    // The one control that re-renders for focus: its hint says what Left and
+    // Right do here, and it re-renders several times a second regardless.
+    const [focused, setFocused] = useState(false);
     const scrub = useRef<number | null>(null);
     useEffect(() => {
         const commit = () => {
@@ -134,37 +135,36 @@ function TvSeek() {
         <TvPressable
             id="player:seek"
             label="Seek. Press left or right to skip ten seconds, or hold to scrub"
+            look={tvFocus.seek}
+            onFocusChange={setFocused}
             onPress={() => undefined}
-            pin={{ left: true, right: true }}
+            pin={SEEK_PIN}
             style={s.seek}
-            focusedStyle={s.seekFocused}
         >
-            {(focused) => (
-                <View style={s.seekBody}>
-                    <View style={s.seekTrack}>
-                        <View
-                            style={[
-                                s.seekFill,
-                                {
-                                    width: `${duration ? clamp((position / duration) * 100, 0, 100) : 0}%`,
-                                },
-                            ]}
-                        />
-                    </View>
-                    <View style={s.seekTimes}>
-                        <Text style={[s.seekTime, scrubMs !== null && s.seekTimeScrubbing]}>
-                            {formatPlaybackTime(position)}
-                        </Text>
-                        <Text style={s.seekHint}>
-                            {focused && scrubMs === null ? '‹  10 seconds  ›' : ''}
-                        </Text>
-                        <Text style={s.seekTime}>{formatPlaybackTime(duration)}</Text>
-                    </View>
-                </View>
-            )}
+            <View style={s.seekTrack}>
+                <View
+                    style={[
+                        s.seekFill,
+                        {
+                            width: `${duration ? clamp((position / duration) * 100, 0, 100) : 0}%`,
+                        },
+                    ]}
+                />
+            </View>
+            <View style={s.seekTimes}>
+                <Text style={[s.seekTime, scrubMs !== null && s.seekTimeScrubbing]}>
+                    {formatPlaybackTime(position)}
+                </Text>
+                <Text style={s.seekHint}>
+                    {focused && scrubMs === null ? '‹  10 seconds  ›' : ''}
+                </Text>
+                <Text style={s.seekTime}>{formatPlaybackTime(duration)}</Text>
+            </View>
         </TvPressable>
     );
 }
+
+const SEEK_PIN = { left: true, right: true } as const;
 
 /**
  * The queue, opened where it is now: the playing item first, what comes next
@@ -182,7 +182,6 @@ function TvQueue() {
             </Text>
             <FlatList
                 data={queue.items}
-                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
                 getItemLayout={(_data, index) => ({
                     index,
                     length: TV_QUEUE_ROW_HEIGHT,
@@ -191,51 +190,43 @@ function TvQueue() {
                 initialNumToRender={8}
                 initialScrollIndex={Math.max(0, Math.min(queue.index, queue.items.length - 1))}
                 keyExtractor={(item, index) => `${item.id}:${index}`}
-                removeClippedSubviews={false}
                 windowSize={5}
+                {...TV_LIST_PROPS}
                 renderItem={({ item, index }) => (
                     <TvPressable
                         id={`queue:${index}`}
                         label={`${index === queue.index ? 'Playing: ' : ''}${item.title}`}
-                        onPress={() => runTvAction(() => handlePlayQueueIndex(index))}
+                        look={tvFocus.row}
                         onLongPress={() =>
-                            openPlaybackContextMenu(mediaContextMenuApi.openForItem, item, connection)
+                            openPlaybackContextMenu(
+                                mediaContextMenuApi.openForItem,
+                                item,
+                                connection,
+                            )
                         }
+                        onPress={() => runTvAction(() => handlePlayQueueIndex(index))}
+                        scrollMargin={TV_QUEUE_ROW_HEIGHT}
                         style={s.queueRow}
-                        focusedStyle={s.trackFocused}
                     >
-                        {(focused) => (
-                            <>
-                                <ArtworkImage
-                                    uri={item.artworkUrl}
-                                    artworkImageId={item.artworkImageId}
-                                    contentSource={getContentSourceFromPlaybackItem(
-                                        item,
-                                        connection,
-                                    )}
-                                    letter={item.title.slice(0, 1)}
-                                    style={s.queueArt}
-                                />
-                                <View style={s.trackCopy}>
-                                    <Text
-                                        numberOfLines={1}
-                                        style={[
-                                            s.trackTitle,
-                                            index === queue.index && s.trackPlaying,
-                                            focused && s.trackInkFocused,
-                                        ]}
-                                    >
-                                        {item.title}
-                                    </Text>
-                                    <Text
-                                        numberOfLines={1}
-                                        style={[s.trackSubtitle, focused && s.trackInkFocused]}
-                                    >
-                                        {item.artist ?? item.subtitle}
-                                    </Text>
-                                </View>
-                            </>
-                        )}
+                        <ArtworkImage
+                            uri={item.artworkUrl}
+                            artworkImageId={item.artworkImageId}
+                            contentSource={getContentSourceFromPlaybackItem(item, connection)}
+                            letter={item.title.slice(0, 1)}
+                            style={s.trackArt}
+                            width={s.trackArt.width}
+                        />
+                        <View style={s.trackCopy}>
+                            <Text
+                                numberOfLines={1}
+                                style={[s.trackTitle, index === queue.index && s.trackPlaying]}
+                            >
+                                {item.title}
+                            </Text>
+                            <Text numberOfLines={1} style={s.trackSubtitle}>
+                                {item.artist ?? item.subtitle}
+                            </Text>
+                        </View>
                     </TvPressable>
                 )}
             />
@@ -259,15 +250,16 @@ export function TvPlayer({ active }: { active: boolean }) {
     // Chapter metadata is position-aware. Passing zero here made a long book
     // stay on its first chapter in the TV player even while the engine moved
     // through the queue.
-    const display =
-        item
-            ? getPlayableDisplayMetadata(
-                  item,
-                  state.status === 'idle' ? 0 : state.positionMs,
-              )
-            : null;
+    const display = item
+        ? getPlayableDisplayMetadata(item, state.status === 'idle' ? 0 : state.positionMs)
+        : null;
     const live = state.status !== 'idle' && isLivePlayback(state);
     const playing = state.status === 'playing' || state.status === 'buffering';
+    const status =
+        state.status === 'idle'
+            ? ''
+            : (state.message ??
+              (state.status === 'buffering' ? 'Buffering…' : !playing ? 'Paused' : ''));
     return (
         <TvFocusScope
             active={active}
@@ -276,13 +268,7 @@ export function TvPlayer({ active }: { active: boolean }) {
             zone="player"
         >
             <View style={s.player}>
-                <LinearGradient
-                    colors={['#202731', '#101216', '#0e0f13']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={s.fill}
-                    pointerEvents="none"
-                />
+                <LinearGradient colors={PLAYER_WASH} pointerEvents="none" style={s.fill} />
                 {item && display ? (
                     <View style={s.playerBody}>
                         {!queueOpen ? (
@@ -292,12 +278,13 @@ export function TvPlayer({ active }: { active: boolean }) {
                                 contentSource={source}
                                 letter={display.title.slice(0, 1)}
                                 style={s.playerArt}
+                                width={s.playerArt.width}
                             />
                         ) : (
                             <TvQueue />
                         )}
                         <View style={s.playerInfo}>
-                            <Text style={s.playerEyebrow}>
+                            <Text style={s.label}>
                                 {live ? 'Live radio' : resting ? 'Last played' : 'Now playing'}
                             </Text>
                             <Text numberOfLines={2} style={s.playerTitle}>
@@ -307,7 +294,7 @@ export function TvPlayer({ active }: { active: boolean }) {
                                 {tvDisplayText(display.subtitle)}
                             </Text>
                             <TvSeek />
-                            <View style={s.transport}>
+                            <View style={[s.transport, resting && s.transportResting]}>
                                 {!live && !resting ? (
                                     <TvTransportButton
                                         id="player:shuffle"
@@ -346,7 +333,7 @@ export function TvPlayer({ active }: { active: boolean }) {
                                         <PlayPauseGlyph
                                             color={color}
                                             isPlaying={playing}
-                                            size={28}
+                                            size={26}
                                         />
                                     )}
                                 />
@@ -380,8 +367,8 @@ export function TvPlayer({ active }: { active: boolean }) {
                     </View>
                 ) : (
                     <View style={s.playerEmpty}>
-                        <Text style={s.playerEmptyTitle}>Nothing is playing</Text>
-                        <Text style={s.playerEmptyText}>
+                        <Text style={s.pageTitle}>Nothing is playing</Text>
+                        <Text style={s.emptyText}>
                             Choose something from your library to start listening.
                         </Text>
                         <TvButton
@@ -390,37 +377,28 @@ export function TvPlayer({ active }: { active: boolean }) {
                             onPress={closeTvPlayer}
                             primary
                             style={s.playerEmptyButton}
-                        >
-                            Back to library
-                        </TvButton>
+                        />
                     </View>
                 )}
                 {item ? (
                     <View style={s.playerFooter}>
                         <Text numberOfLines={1} style={s.playerStatus}>
-                            {state.status !== 'idle'
-                                ? (state.message ??
-                                  (state.status === 'buffering'
-                                      ? 'Buffering…'
-                                      : !playing
-                                        ? 'Paused'
-                                        : ''))
-                                : ''}
+                            {status}
                         </Text>
-                        <View style={s.transportSecondary}>
+                        <View style={s.playerFooterActions}>
                             {!live && !resting ? (
                                 <TvButton
                                     id="player:queue"
                                     label={queueOpen ? 'Artwork' : 'Up next'}
                                     selected={queueOpen}
-                                    style={s.quietButton}
+                                    style={s.footerButton}
                                     onPress={() => setQueueOpen((value) => !value)}
                                 />
                             ) : null}
                             <TvButton
                                 id="player:more"
                                 label="More options"
-                                style={s.quietButton}
+                                style={s.footerButton}
                                 onPress={() =>
                                     openPlaybackContextMenu(
                                         mediaContextMenuApi.openForItem,

@@ -29,16 +29,24 @@ createRoot(document.getElementById('root')!).render(
     <PersistQueryClientProvider
         client={queryClient}
         persistOptions={{
-            buster: 'samo-v4',
+            // samo-v5 drops every stream URL an earlier build persisted.
+            buster: 'samo-v5',
             dehydrateOptions: {
                 // The item-list loaders keep their rows in a cache entry that
                 // has no fetcher; every mount throws that entry away and
                 // refetches from the server regardless. Persisting it bought
                 // nothing and cost a full re-serialisation of every loaded row
                 // into IndexedDB on each page scrolled in.
+                //
+                // A stream URL carries a stream token that dies 30 minutes after
+                // it was minted. Restored on the next visit, it was the first
+                // URL useSongUrl saw for that song, and its reuse-prior latch
+                // held on to it: every song played in an earlier session 401'd
+                // in the web player until site data was cleared.
                 shouldDehydrateQuery: (query) =>
                     query.state.status === 'success' &&
-                    query.queryKey[1] !== 'item-list-infinite-loader',
+                    query.queryKey[1] !== 'item-list-infinite-loader' &&
+                    query.queryKey[1] !== 'stream-url',
             },
             hydrateOptions: {
                 defaultOptions: {

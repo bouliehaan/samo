@@ -7,6 +7,7 @@ import { useIsMobile } from '/@/renderer/hooks/use-is-mobile';
 import { DefaultLayout } from '/@/renderer/layouts/default-layout';
 import { MobileLayout } from '/@/renderer/layouts/mobile-layout/mobile-layout';
 import { AppRoute } from '/@/renderer/router/routes';
+import { ServerRecentsSync } from '/@/renderer/services/samo-recents';
 import {
     useCommandPaletteState,
     useLayoutHotkeyBindings,
@@ -34,6 +35,7 @@ export const ResponsiveLayout = ({ shell }: ResponsiveLayoutProps) => {
         <>
             <ResponsiveLayoutBase shell={shell} />
             <LayoutHotkeys />
+            <ServerRecentsSync />
         </>
     );
 };

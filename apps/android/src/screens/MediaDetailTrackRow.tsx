@@ -128,6 +128,7 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
                             letter={track.title.slice(0, 1).toUpperCase()}
                             serverConnection={serverConnection}
                             style={styles.trackArtwork}
+                            width={styles.trackArtwork.width}
                             uri={track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl}
                         />
                     ) : (

@@ -538,15 +538,26 @@ internal object SamoProgressSync {
      * server position). Reads the journal on [writeExecutor] (its only safe
      * thread); [callback] gets null seconds when nothing is cached.
      */
-    fun getResumeSeconds(kind: String, targetId: String, callback: (Long?, Boolean) -> Unit) {
+    fun getResumeSeconds(kind: String, targetId: String, callback: (Long?, Boolean) -> Unit) =
+        getResumeEntry(kind, targetId) { entry -> callback(entry?.progressSeconds, entry?.completed == true) }
+
+    /**
+     * The whole journal entry behind [getResumeSeconds], stamp included, so JS
+     * can tell a position the phone saved after the server's last one from an
+     * older one. [callback] gets null when nothing is cached.
+     */
+    fun getResumeEntry(kind: String, targetId: String, callback: (SamoProgressJournal.PendingWrite?) -> Unit) {
         writeExecutor.execute {
             val entry = journal?.resumeFor(kind, targetId)
             Log.d(
                 TAG,
                 "resume cache read $kind/$targetId -> " +
-                    (entry?.let { "${it.progressSeconds}s completed=${it.completed == true}" } ?: "none"),
+                    (entry?.let {
+                        "${it.progressSeconds}s completed=${it.completed == true} " +
+                            "at=${it.updatedAtMs} unsent=${it.unsent}"
+                    } ?: "none"),
             )
-            callback(entry?.progressSeconds, entry?.completed == true)
+            callback(entry)
         }
     }
 

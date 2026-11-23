@@ -28,6 +28,7 @@ import {
 } from '../hooks/use-samo-radio-device';
 import { triggerImpact } from '../services/haptics';
 import { useAppNavigationSelector } from '../state/app-navigation';
+import { HOME_EDGE_PADDING, SCREEN_WIDTH } from '../theme/layout';
 import { presses } from '../theme/motion';
 import { useSamoRadioSelector } from '../state/samo-radio';
 import { styles } from '../theme/styles';
@@ -39,6 +40,14 @@ import { colors } from '../theme/tokens';
  * Explore hero's, for the same reason.
  */
 const SAMO_RADIO_BLUR = 34;
+
+/**
+ * The panel's width — the radio page's, inside its padding — which the wash
+ * fills. The wash is fetched at that size although it is blurred: expo-image
+ * blurs the cover as decoded for the view, so a smaller one would come out
+ * blurred harder than this radius says.
+ */
+const SAMO_RADIO_PANEL_WIDTH = SCREEN_WIDTH - HOME_EDGE_PADDING * 2;
 
 /**
  * Dims the wash to a legible bed — densest at the bottom-left under the copy
@@ -143,6 +152,7 @@ const SamoRadioDeviceCard = memo(
                         serverConnection={serverConnection}
                         style={styles.samoRadioBackdrop}
                         uri={artworkUrl}
+                        width={SAMO_RADIO_PANEL_WIDTH}
                     />
                 ) : null}
                 <LinearGradient
@@ -174,6 +184,7 @@ const SamoRadioDeviceCard = memo(
                                 serverConnection={serverConnection}
                                 style={styles.samoRadioSleeveArt}
                                 uri={artworkUrl}
+                                width={styles.samoRadioSleeve.width}
                             />
                         </View>
                     ) : null}
